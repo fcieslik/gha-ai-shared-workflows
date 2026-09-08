@@ -1,0 +1,13 @@
+{
+  "include": ["."],
+  "exclude": [".venv"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["."],
+  "executionEnvironments": [
+    {
+      "root": "tests",
+      "extraPaths": ["."]
+    }
+  ]
+}
