@@ -1,19 +1,38 @@
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 
 from .models import (
     AssessProposal,
     CollectOutcome,
-    FailureIdentity,
+    EvidenceRound,
+    Hypothesis,
+    Investigation,
+    Localization,
+    LogFindings,
     TriageDecision,
     TriageResult,
 )
+
+MAX_EVIDENCE_ROUNDS = 3
+
+
+@dataclass(frozen=True)
+class Specialists:
+    """The five LLM nodes of the investigation graph, injected as callables."""
+
+    inspect_logs: Callable[[Investigation], LogFindings]
+    localize: Callable[[Investigation], Localization]
+    form_hypothesis: Callable[[Investigation], list[Hypothesis]]
+    gather_evidence: Callable[[Investigation], EvidenceRound]
+    assess: Callable[[Investigation], AssessProposal]
 
 
 def run_triage(
     *,
     collect: Callable[[], CollectOutcome],
-    assess: Callable[[CollectOutcome], AssessProposal],
+    specialists: Specialists,
 ) -> TriageResult:
+    """collect → inspect_logs → localize → form_hypothesis → evidence loop → assess → gate."""
     outcome = collect()
     if not outcome.is_test_failure:
         return TriageResult(
@@ -22,16 +41,52 @@ def run_triage(
             gate_reason="out_of_mvp_scope",
             failure=outcome.failure,
         )
-    return apply_gate(assess(outcome), outcome.failure)
+    investigation = _investigate(outcome, specialists)
+    return apply_gate(specialists.assess(investigation), investigation)
 
 
-def apply_gate(proposal: AssessProposal, failure: FailureIdentity) -> TriageResult:
+def _investigate(outcome: CollectOutcome, specialists: Specialists) -> Investigation:
+    state = Investigation(failure=outcome.failure, log_files=outcome.log_files)
+    state = replace(state, log_findings=specialists.inspect_logs(state))
+    state = replace(state, localization=specialists.localize(state))
+    state = replace(state, hypotheses=tuple(specialists.form_hypothesis(state)))
+    return _gather_evidence(state, specialists.gather_evidence)
+
+
+def _gather_evidence(
+    state: Investigation, gather: Callable[[Investigation], EvidenceRound]
+) -> Investigation:
+    """At most MAX_EVIDENCE_ROUNDS rounds, then assess is forced by returning."""
+    for _ in range(MAX_EVIDENCE_ROUNDS):
+        round_ = gather(state)
+        state = replace(
+            state,
+            evidence=state.evidence + tuple(round_.evidence),
+            evidence_loop_iterations=state.evidence_loop_iterations + 1,
+        )
+        if not round_.needs_more:
+            break
+    return state
+
+
+def apply_gate(proposal: AssessProposal, investigation: Investigation) -> TriageResult:
     decision, reason = _policy(proposal)
     return TriageResult(
         proposed_decision=proposal.proposed_decision,
         decision=decision,
         gate_reason=reason,
-        failure=failure,
+        failure=investigation.failure,
+        confidence=proposal.confidence,
+        risk=proposal.risk,
+        # An UNRESOLVED result has no Root Cause by definition; the ranked
+        # Hypotheses survive so a human can see what was considered.
+        root_cause=None if decision == "UNRESOLVED" else proposal.root_cause,
+        hypotheses=proposal.hypotheses or list(investigation.hypotheses),
+        evidence=proposal.evidence,
+        affected_files=proposal.affected_files,
+        recommended_fix=proposal.recommended_fix,
+        validation=proposal.validation,
+        evidence_loop_iterations=investigation.evidence_loop_iterations,
     )
 
 

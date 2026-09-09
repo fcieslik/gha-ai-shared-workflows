@@ -1,4 +1,4 @@
 from .collect import collect_failed_job
-from .run import run_triage
+from .run import Specialists, run_triage
 
-__all__ = ["collect_failed_job", "run_triage"]
+__all__ = ["Specialists", "collect_failed_job", "run_triage"]

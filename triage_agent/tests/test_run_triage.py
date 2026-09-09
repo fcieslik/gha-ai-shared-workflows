@@ -6,10 +6,36 @@ from .. import run_triage
 from ..models import (
     AssessProposal,
     CollectOutcome,
-    FailureIdentity,
+    EvidenceRound,
+    Hypothesis,
+    Investigation,
+    LogFindings,
+    Localization,
     RecommendedFix,
     RootCause,
+    FailureIdentity,
 )
+from ..run import Specialists
+
+
+def _specialists(
+    *,
+    assess,
+    inspect_logs=None,
+    localize=None,
+    form_hypothesis=None,
+    gather_evidence=None,
+) -> Specialists:
+    """Inert specialists, so a test only injects the node it is about."""
+    return Specialists(
+        inspect_logs=inspect_logs or (lambda state: LogFindings(observations=[])),
+        localize=localize
+        or (lambda state: Localization(affected_files=[], observations=[])),
+        form_hypothesis=form_hypothesis or (lambda state: []),
+        gather_evidence=gather_evidence
+        or (lambda state: EvidenceRound(evidence=[], needs_more=False)),
+        assess=assess,
+    )
 
 
 def _failure() -> FailureIdentity:
@@ -28,11 +54,11 @@ def test_non_test_failure_is_human_review_without_assess():
     def collect() -> CollectOutcome:
         return CollectOutcome(failure=_failure(), is_test_failure=False)
 
-    def assess(outcome: CollectOutcome):
-        assess_calls.append(outcome)
+    def assess(state: Investigation):
+        assess_calls.append(state)
         raise AssertionError("assess must not run")
 
-    result = run_triage(collect=collect, assess=assess)
+    result = run_triage(collect=collect, specialists=_specialists(assess=assess))
 
     assert result.decision == "HUMAN_REVIEW"
     assert result.proposed_decision == "HUMAN_REVIEW"
@@ -67,11 +93,11 @@ def test_eligible_test_failure_stays_auto_fix():
     def collect() -> CollectOutcome:
         return CollectOutcome(failure=_test_failure(), is_test_failure=True)
 
-    def assess(outcome: CollectOutcome) -> AssessProposal:
-        assert outcome.is_test_failure
+    def assess(state: Investigation) -> AssessProposal:
+        assert state.failure.job == "tests"
         return _eligible_proposal()
 
-    result = run_triage(collect=collect, assess=assess)
+    result = run_triage(collect=collect, specialists=_specialists(assess=assess))
 
     assert result.decision == "AUTO_FIX"
     assert result.proposed_decision == "AUTO_FIX"
@@ -83,10 +109,10 @@ def _run_test_failure(proposal: AssessProposal):
     def collect() -> CollectOutcome:
         return CollectOutcome(failure=_test_failure(), is_test_failure=True)
 
-    def assess(outcome: CollectOutcome) -> AssessProposal:
+    def assess(state: Investigation) -> AssessProposal:
         return proposal
 
-    return run_triage(collect=collect, assess=assess)
+    return run_triage(collect=collect, specialists=_specialists(assess=assess))
 
 
 def test_missing_root_cause_is_unresolved_even_when_auto_fix_proposed():
@@ -185,17 +211,17 @@ def test_github_port_is_unusable_by_anything_after_collect(tmp_path):
             github=github, run_id="456", job_name="tests (3.11)", log_dir=tmp_path
         )
 
-    def assess(outcome: CollectOutcome) -> AssessProposal:
+    def assess(state: Investigation) -> AssessProposal:
         github.list_jobs("456")
         raise AssertionError("assess reached GitHub after collect")
 
     with pytest.raises(SealedPortError):
-        run_triage(collect=collect, assess=assess)
+        run_triage(collect=collect, specialists=_specialists(assess=assess))
 
 
 def _recording_assess(calls: list):
-    def assess(outcome: CollectOutcome) -> AssessProposal:
-        calls.append(outcome)
+    def assess(state: Investigation) -> AssessProposal:
+        calls.append(state)
         raise AssertionError("assess must not run")
 
     return assess
@@ -217,7 +243,7 @@ def test_collected_test_failure_carries_its_identity_to_the_result(tmp_path):
 
     result = run_triage(
         collect=_collect_from_github(_github(), tmp_path),
-        assess=lambda outcome: _eligible_proposal(),
+        specialists=_specialists(assess=lambda state: _eligible_proposal()),
     )
 
     assert result.decision == "AUTO_FIX"
@@ -238,7 +264,7 @@ def test_collected_non_test_failure_is_out_of_mvp_scope(tmp_path):
 
     result = run_triage(
         collect=_collect_from_github(github, tmp_path),
-        assess=_recording_assess(assess_calls),
+        specialists=_specialists(assess=_recording_assess(assess_calls)),
     )
 
     assert result.decision == "HUMAN_REVIEW"
@@ -261,7 +287,149 @@ def test_missing_job_fails_before_any_specialist_runs(tmp_path):
 
     with pytest.raises(FailedJobNotFound):
         run_triage(
-            collect=collect, assess=_recording_assess(assess_calls)
+            collect=collect, specialists=_specialists(assess=_recording_assess(assess_calls))
         )
 
     assert assess_calls == []
+
+
+def _test_failure_collect():
+    def collect() -> CollectOutcome:
+        return CollectOutcome(failure=_test_failure(), is_test_failure=True)
+
+    return collect
+
+
+def test_specialists_run_in_graph_order():
+    order: list[str] = []
+
+    def record(name: str, value):
+        def node(state: Investigation):
+            order.append(name)
+            return value
+
+        return node
+
+    run_triage(
+        collect=_test_failure_collect(),
+        specialists=Specialists(
+            inspect_logs=record("inspect_logs", LogFindings(observations=["boom"])),
+            localize=record(
+                "localize", Localization(affected_files=["a.py"], observations=[])
+            ),
+            form_hypothesis=record("form_hypothesis", []),
+            gather_evidence=record(
+                "gather_evidence", EvidenceRound(evidence=[], needs_more=False)
+            ),
+            assess=record("assess", _eligible_proposal()),
+        ),
+    )
+
+    assert order == [
+        "inspect_logs",
+        "localize",
+        "form_hypothesis",
+        "gather_evidence",
+        "assess",
+    ]
+
+
+def _run_with_evidence_rounds(needs_more: bool):
+    rounds: list[Investigation] = []
+    assess_calls: list[Investigation] = []
+
+    def gather_evidence(state: Investigation) -> EvidenceRound:
+        rounds.append(state)
+        return EvidenceRound(evidence=[f"observation {len(rounds)}"], needs_more=needs_more)
+
+    def assess(state: Investigation) -> AssessProposal:
+        assess_calls.append(state)
+        return _eligible_proposal()
+
+    result = run_triage(
+        collect=_test_failure_collect(),
+        specialists=_specialists(assess=assess, gather_evidence=gather_evidence),
+    )
+    return result, rounds, assess_calls
+
+
+def test_evidence_loop_stops_at_three_rounds_then_assess_runs():
+    result, rounds, assess_calls = _run_with_evidence_rounds(needs_more=True)
+
+    assert len(rounds) == 3
+    assert len(assess_calls) == 1
+    assert result.evidence_loop_iterations == 3
+    assert assess_calls[0].evidence == (
+        "observation 1",
+        "observation 2",
+        "observation 3",
+    )
+
+
+def test_evidence_loop_stops_early_when_no_more_is_needed():
+    result, rounds, assess_calls = _run_with_evidence_rounds(needs_more=False)
+
+    assert len(rounds) == 1
+    assert len(assess_calls) == 1
+    assert result.evidence_loop_iterations == 1
+
+
+def test_findings_accumulate_into_the_state_each_specialist_sees():
+    seen: dict[str, Investigation] = {}
+
+    def capture(name: str, value):
+        def node(state: Investigation):
+            seen[name] = state
+            return value
+
+        return node
+
+    hypotheses = [Hypothesis(summary="schema drift", rank=1)]
+    run_triage(
+        collect=_test_failure_collect(),
+        specialists=Specialists(
+            inspect_logs=capture("inspect_logs", LogFindings(observations=["boom"])),
+            localize=capture(
+                "localize", Localization(affected_files=["a.py"], observations=["b"])
+            ),
+            form_hypothesis=capture("form_hypothesis", hypotheses),
+            gather_evidence=capture(
+                "gather_evidence", EvidenceRound(evidence=[], needs_more=False)
+            ),
+            assess=capture("assess", _eligible_proposal()),
+        ),
+    )
+
+    assert seen["inspect_logs"].log_findings is None
+    assert seen["localize"].log_findings == LogFindings(observations=["boom"])
+    assert seen["form_hypothesis"].localization is not None
+    assert seen["gather_evidence"].hypotheses == tuple(hypotheses)
+
+
+def test_committed_root_cause_is_kept_with_ranked_hypotheses():
+    hypotheses = [
+        Hypothesis(summary="schema drift", rank=1, status="committed"),
+        Hypothesis(summary="flaky network", rank=2, status="discarded"),
+    ]
+    result = _run_test_failure(replace(_eligible_proposal(), hypotheses=hypotheses))
+
+    assert result.decision == "AUTO_FIX"
+    assert result.root_cause == RootCause(
+        summary="assertion mismatch", details="field X became Y"
+    )
+    assert result.hypotheses == hypotheses
+
+
+def test_unresolved_result_drops_the_root_cause_but_keeps_hypotheses():
+    hypotheses = [Hypothesis(summary="schema drift", rank=1)]
+    result = _run_test_failure(
+        replace(
+            _eligible_proposal(),
+            proposed_decision="UNRESOLVED",
+            hypotheses=hypotheses,
+        )
+    )
+
+    assert result.decision == "UNRESOLVED"
+    assert result.root_cause is None
+    assert result.hypotheses == hypotheses

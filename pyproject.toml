@@ -5,7 +5,8 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+agents = ["openai-agents>=0.2"]
+dev = ["pytest>=8", "openai-agents>=0.2"]
 
 [build-system]
 requires = ["setuptools>=61"]
