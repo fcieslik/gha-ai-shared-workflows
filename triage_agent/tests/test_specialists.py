@@ -4,8 +4,19 @@ import pytest
 
 pytest.importorskip("agents", reason="the agents extra is not installed")
 
-from ..models import FailureIdentity, Hypothesis, Investigation, LogFindings  # noqa: E402
-from ..specialists import AssessOutput, brief, build_agents  # noqa: E402
+from ..models import (  # noqa: E402
+    CollectOutcome,
+    FailureIdentity,
+    Hypothesis,
+    Investigation,
+    LogFindings,
+)
+from ..specialists import (  # noqa: E402
+    AssessOutput,
+    brief,
+    build_agents,
+    default_specialists,
+)
 from ..tools import LogTools, RepoTools  # noqa: E402
 
 LOG_TOOLS = {"read_log_slice", "search_logs"}
@@ -82,3 +93,28 @@ def test_brief_carries_the_accumulated_state_into_the_prompt():
     assert "assertion failed" in text
     assert "1. schema drift" in text
     assert "recent commit changed the schema" in text
+
+
+def test_default_specialists_are_the_sdk_agents_bound_to_this_run(tmp_path: Path):
+    log_file = tmp_path / "job-1.log"
+    log_file.write_text("boom\n", encoding="utf-8")
+    outcome = CollectOutcome(
+        failure=FailureIdentity(
+            workflow="CI", job="tests", step="Run pytest", job_id="1", run_id="2"
+        ),
+        is_test_failure=True,
+        log_files=(log_file,),
+    )
+
+    specialists = default_specialists(outcome=outcome, workspace=tmp_path)
+
+    assert all(
+        callable(getattr(specialists, node))
+        for node in (
+            "inspect_logs",
+            "localize",
+            "form_hypothesis",
+            "gather_evidence",
+            "assess",
+        )
+    )

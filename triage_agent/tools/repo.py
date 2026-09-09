@@ -49,8 +49,10 @@ class RepoTools:
         """Search tracked files for `pattern`, as `path:line: text` matches."""
         self._resolve(path)
         limit = min(max(max_matches, 1), MAX_MATCHES)
+        # git grep exits 1 with no output when nothing matched, which is not an error.
         found = self._git(
-            "grep", "--line-number", "--no-color", "-e", pattern, "--", path
+            "grep", "--line-number", "--no-color", "-e", pattern, "--", path,
+            allow_no_match=True,
         )
         return found.splitlines()[:limit]
 
@@ -107,7 +109,7 @@ class RepoTools:
             raise ToolAccessError(f"{path!r} is outside the checkout")
         return target
 
-    def _git(self, *args: str) -> str:
+    def _git(self, *args: str, allow_no_match: bool = False) -> str:
         result = subprocess.run(
             ["git", *args],
             cwd=self._workspace,
@@ -115,7 +117,6 @@ class RepoTools:
             text=True,
             check=False,
         )
-        # git grep exits 1 with no output when nothing matched, which is not an error.
-        if result.returncode != 0 and not result.stdout:
+        if result.returncode != 0 and not (allow_no_match and result.returncode == 1):
             raise ToolAccessError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
         return result.stdout

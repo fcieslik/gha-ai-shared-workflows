@@ -171,3 +171,30 @@ def test_git_show_refuses_commits_outside_the_range(tmp_path: Path):
     assert "branch work" in tools.git_show(head)
     with pytest.raises(ToolAccessError):
         tools.git_show(older)
+
+
+def test_git_show_accepts_a_commit_inside_the_range(tmp_path: Path):
+    workspace = _repo(tmp_path)
+    subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=workspace,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
+        cwd=workspace,
+        check=True,
+    )
+    for name in ("first", "second"):
+        (workspace / f"{name}.py").write_text(f"value = '{name}'\n")
+        subprocess.run(["git", "add", "."], cwd=workspace, check=True)
+        subprocess.run(["git", "commit", "-qm", name], cwd=workspace, check=True)
+    middle = subprocess.run(
+        ["git", "rev-parse", "HEAD~1"], cwd=workspace, capture_output=True, text=True
+    ).stdout.strip()
+
+    assert "first" in RepoTools(workspace).git_show(middle)
+
+
+def test_grep_returns_nothing_when_there_is_no_match(tmp_path: Path):
+    assert RepoTools(_repo(tmp_path)).grep("nothing matches this") == []

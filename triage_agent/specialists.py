@@ -5,6 +5,7 @@ so tests inject fakes at the `run_triage` seam without the SDK or a model call.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from agents import Agent, Runner, Tool, function_tool
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 
 from .models import (
     AssessProposal,
+    CollectOutcome,
     EvidenceRound,
     Hypothesis,
     Investigation,
@@ -145,6 +147,21 @@ def build_agents(
             output_type=AssessOutput,
             model=model,
         ),
+    )
+
+
+def default_specialists(
+    *, outcome: CollectOutcome, workspace: Path, model: str | None = None
+) -> Specialists:
+    """The specialists Triage runs with unless a caller injects its own.
+
+    Assembled per run rather than once: the log tools are bound to the files
+    collect downloaded, so they cannot exist before collect has run.
+    """
+    return openai_specialists(
+        log_tools=LogTools(outcome.log_files),
+        repo_tools=RepoTools(workspace),
+        model=model,
     )
 
 
