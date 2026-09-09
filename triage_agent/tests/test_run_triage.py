@@ -191,3 +191,77 @@ def test_github_port_is_unusable_by_anything_after_collect(tmp_path):
 
     with pytest.raises(SealedPortError):
         run_triage(collect=collect, assess=assess)
+
+
+def _recording_assess(calls: list):
+    def assess(outcome: CollectOutcome) -> AssessProposal:
+        calls.append(outcome)
+        raise AssertionError("assess must not run")
+
+    return assess
+
+
+def _collect_from_github(github, tmp_path):
+    from ..collect import collect_failed_job
+
+    def collect() -> CollectOutcome:
+        return collect_failed_job(
+            github=github, run_id="456", job_name="tests (3.11)", log_dir=tmp_path
+        )
+
+    return collect
+
+
+def test_collected_test_failure_carries_its_identity_to_the_result(tmp_path):
+    from .test_collect import _github
+
+    result = run_triage(
+        collect=_collect_from_github(_github(), tmp_path),
+        assess=lambda outcome: _eligible_proposal(),
+    )
+
+    assert result.decision == "AUTO_FIX"
+    assert result.failure == FailureIdentity(
+        workflow="CI", job="tests (3.11)", step="Run pytest", job_id="123", run_id="456"
+    )
+
+
+def test_collected_non_test_failure_is_out_of_mvp_scope(tmp_path):
+    from ..github import JobStep
+    from .test_collect import _github
+
+    github = _github(
+        steps=[JobStep(number=1, name="Run ruff", conclusion="failure")],
+        log="ruff: 3 errors",
+    )
+    assess_calls = []
+
+    result = run_triage(
+        collect=_collect_from_github(github, tmp_path),
+        assess=_recording_assess(assess_calls),
+    )
+
+    assert result.decision == "HUMAN_REVIEW"
+    assert result.gate_reason == "out_of_mvp_scope"
+    assert result.failure.step == "Run ruff"
+    assert assess_calls == []
+
+
+def test_missing_job_fails_before_any_specialist_runs(tmp_path):
+    from ..collect import collect_failed_job
+    from ..github import FailedJobNotFound
+    from .test_collect import _github
+
+    assess_calls = []
+
+    def collect() -> CollectOutcome:
+        return collect_failed_job(
+            github=_github(), run_id="456", job_name="deploy", log_dir=tmp_path
+        )
+
+    with pytest.raises(FailedJobNotFound):
+        run_triage(
+            collect=collect, assess=_recording_assess(assess_calls)
+        )
+
+    assert assess_calls == []

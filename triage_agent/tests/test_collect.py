@@ -93,7 +93,7 @@ def test_first_failed_step_is_the_lowest_numbered_failure(tmp_path: Path):
 def test_logs_are_stored_as_local_files(tmp_path: Path):
     outcome = _collect(_github(), tmp_path)
 
-    assert [path.read_text() for path in outcome.log_files] == [PYTEST_LOG]
+    assert [path.read_text(encoding="utf-8") for path in outcome.log_files] == [PYTEST_LOG]
     assert all(path.parent == tmp_path for path in outcome.log_files)
 
 
@@ -128,6 +128,18 @@ def test_test_output_in_logs_is_a_test_failure(tmp_path: Path):
     outcome = _collect(_github(steps=steps), tmp_path)
 
     assert outcome.is_test_failure
+
+
+def test_test_output_is_not_credited_to_an_earlier_failed_step(tmp_path: Path):
+    steps = [
+        JobStep(number=1, name="Run ruff", conclusion="failure"),
+        JobStep(number=2, name="Run pytest", conclusion="failure"),
+    ]
+
+    outcome = _collect(_github(steps=steps), tmp_path)
+
+    assert outcome.failure.step == "Run ruff"
+    assert not outcome.is_test_failure
 
 
 def test_lint_step_without_test_output_is_not_a_test_failure(tmp_path: Path):

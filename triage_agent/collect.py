@@ -30,11 +30,12 @@ def collect_failed_job(
         if run is None:
             raise FailedJobNotFound(f"run {run_id} was not found")
         job = _resolve_job(github.list_jobs(run_id), run_id, job_name)
-        step = _first_failed_step(job)
+        failed_steps = _failed_steps(job)
         logs = github.get_job_logs(job.job_id)
     finally:
         github.seal()
 
+    step = min(failed_steps, key=lambda step: step.number)
     log_file = _store_logs(log_dir, job.job_id, logs)
     return CollectOutcome(
         failure=FailureIdentity(
@@ -44,7 +45,7 @@ def collect_failed_job(
             job_id=job.job_id,
             run_id=run.run_id,
         ),
-        is_test_failure=_is_test_failure(step, logs),
+        is_test_failure=_is_test_failure(step, logs, failed_steps=len(failed_steps)),
         log_files=(log_file,),
     )
 
@@ -58,26 +59,32 @@ def _resolve_job(jobs: list[WorkflowJob], run_id: str, job_name: str) -> Workflo
     return matches[0]
 
 
-def _first_failed_step(job: WorkflowJob) -> JobStep:
+def _failed_steps(job: WorkflowJob) -> list[JobStep]:
     failed = [step for step in job.steps if step.conclusion == "failure"]
     if not failed:
         raise NoFailedStep(f"job {job.name!r} has no failed step")
-    return min(failed, key=lambda step: step.number)
+    return failed
 
 
 def _store_logs(log_dir: Path, job_id: str, logs: str) -> Path:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"job-{job_id}.log"
-    log_file.write_text(logs)
+    log_file.write_text(logs, encoding="utf-8")
     return log_file
 
 
-_TEST_STEP_NAME = re.compile(r"pytest|py\.test|\btests?\b", re.IGNORECASE)
+_TEST_STEP_NAME = re.compile(r"pytest|py\.test", re.IGNORECASE)
 _TEST_LOG_CUES = ("=== FAILURES ===", "short test summary info")
 
 
-def _is_test_failure(step: JobStep, logs: str) -> bool:
-    """Deterministic classify: the step name first, its log output as a fallback."""
+def _is_test_failure(step: JobStep, logs: str, *, failed_steps: int) -> bool:
+    """Deterministic classify: the step name first, its log output as a fallback.
+
+    Logs arrive as one blob for the whole job, so test output in them only
+    belongs to this step when it is the job's only failed step.
+    """
     if _TEST_STEP_NAME.search(step.name):
         return True
+    if failed_steps > 1:
+        return False
     return any(cue in logs for cue in _TEST_LOG_CUES)
