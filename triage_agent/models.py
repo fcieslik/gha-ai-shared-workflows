@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 TriageDecision = Literal["AUTO_FIX", "HUMAN_REVIEW", "UNRESOLVED"]
@@ -18,6 +19,7 @@ class FailureIdentity:
 class CollectOutcome:
     failure: FailureIdentity
     is_test_failure: bool
+    log_files: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)

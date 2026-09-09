@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+import pytest
+
 from .. import run_triage
 from ..models import (
     AssessProposal,
@@ -169,3 +171,23 @@ def test_ineligible_auto_fix_is_human_review():
         assert result.proposed_decision == "AUTO_FIX", reason
         assert result.decision == "HUMAN_REVIEW", reason
         assert result.gate_reason == reason
+
+
+def test_github_port_is_unusable_by_anything_after_collect(tmp_path):
+    from ..collect import collect_failed_job
+    from ..github import SealedPortError
+    from .test_collect import _github
+
+    github = _github()
+
+    def collect() -> CollectOutcome:
+        return collect_failed_job(
+            github=github, run_id="456", job_name="tests (3.11)", log_dir=tmp_path
+        )
+
+    def assess(outcome: CollectOutcome) -> AssessProposal:
+        github.list_jobs("456")
+        raise AssertionError("assess reached GitHub after collect")
+
+    with pytest.raises(SealedPortError):
+        run_triage(collect=collect, assess=assess)
