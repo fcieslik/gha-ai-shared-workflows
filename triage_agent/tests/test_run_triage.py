@@ -199,26 +199,6 @@ def test_ineligible_auto_fix_is_human_review():
         assert result.gate_reason == reason
 
 
-def test_github_port_is_unusable_by_anything_after_collect(tmp_path):
-    from ..collect import collect_failed_job
-    from ..github import SealedPortError
-    from .test_collect import _github
-
-    github = _github()
-
-    def collect() -> CollectOutcome:
-        return collect_failed_job(
-            github=github, run_id="456", job_name="tests (3.11)", log_dir=tmp_path
-        )
-
-    def assess(state: Investigation) -> AssessProposal:
-        github.list_jobs("456")
-        raise AssertionError("assess reached GitHub after collect")
-
-    with pytest.raises(SealedPortError):
-        run_triage(collect=collect, specialists=_specialists(assess=assess))
-
-
 def _recording_assess(calls: list):
     def assess(state: Investigation) -> AssessProposal:
         calls.append(state)
@@ -227,22 +207,23 @@ def _recording_assess(calls: list):
     return assess
 
 
-def _collect_from_github(github, tmp_path):
+def _collect_from_files(tmp_path, *, job_name="tests (3.11)", **kwargs):
     from ..collect import collect_failed_job
+    from .test_collect import _files
+
+    jobs_file, log_file = _files(tmp_path, **kwargs)
 
     def collect() -> CollectOutcome:
         return collect_failed_job(
-            github=github, run_id="456", job_name="tests (3.11)", log_dir=tmp_path
+            jobs_file=jobs_file, log_file=log_file, job_name=job_name
         )
 
     return collect
 
 
 def test_collected_test_failure_carries_its_identity_to_the_result(tmp_path):
-    from .test_collect import _github
-
     result = run_triage(
-        collect=_collect_from_github(_github(), tmp_path),
+        collect=_collect_from_files(tmp_path),
         specialists=_specialists(assess=lambda state: _eligible_proposal()),
     )
 
@@ -253,17 +234,14 @@ def test_collected_test_failure_carries_its_identity_to_the_result(tmp_path):
 
 
 def test_collected_non_test_failure_is_out_of_mvp_scope(tmp_path):
-    from ..github import JobStep
-    from .test_collect import _github
-
-    github = _github(
-        steps=[JobStep(number=1, name="Run ruff", conclusion="failure")],
-        log="ruff: 3 errors",
-    )
     assess_calls = []
 
     result = run_triage(
-        collect=_collect_from_github(github, tmp_path),
+        collect=_collect_from_files(
+            tmp_path,
+            steps=[{"number": 1, "name": "Run ruff", "conclusion": "failure"}],
+            log="ruff: 3 errors",
+        ),
         specialists=_specialists(assess=_recording_assess(assess_calls)),
     )
 
@@ -274,20 +252,14 @@ def test_collected_non_test_failure_is_out_of_mvp_scope(tmp_path):
 
 
 def test_missing_job_fails_before_any_specialist_runs(tmp_path):
-    from ..collect import collect_failed_job
-    from ..github import FailedJobNotFound
-    from .test_collect import _github
+    from ..collect import FailedJobNotFound
 
     assess_calls = []
 
-    def collect() -> CollectOutcome:
-        return collect_failed_job(
-            github=_github(), run_id="456", job_name="deploy", log_dir=tmp_path
-        )
-
     with pytest.raises(FailedJobNotFound):
         run_triage(
-            collect=collect, specialists=_specialists(assess=_recording_assess(assess_calls))
+            collect=_collect_from_files(tmp_path, job_name="deploy"),
+            specialists=_specialists(assess=_recording_assess(assess_calls)),
         )
 
     assert assess_calls == []
