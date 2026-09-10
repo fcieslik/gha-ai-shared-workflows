@@ -67,25 +67,41 @@ jobs:
 
       - name: Show collected logs in the job summary
         env:
-          LOG_TAIL_LINES: "50"
+          # GitHub rejects step summaries above 1 MiB; the rest is left for headings.
+          SUMMARY_LOG_BUDGET_BYTES: "900000"
         run: |
           set -euo pipefail
           if [ ! -s "$RUNNER_TEMP/failed-job-ids.txt" ]; then
             echo "No failed jobs found in the source attempt." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          failed_job_count=$(grep -c . "$RUNNER_TEMP/failed-job-ids.txt")
+          max_log_bytes=$(( SUMMARY_LOG_BUDGET_BYTES / failed_job_count ))
           while IFS= read -r job_id; do
             [ -n "$job_id" ] || continue
             job_name=$(jq -r --argjson id "$job_id" \
               '.[] | .jobs[]? | select(.id == $id) | .name' "$RUNNER_TEMP/source-jobs.json")
-            # A five-backtick fence survives triple-backtick blocks inside the log;
-            # ANSI colour codes are stripped because Markdown renders them as garbage.
+            plain_log="$RUNNER_TEMP/failed-job-${job_id}.plain.log"
+            # Strip ANSI colour codes, which Markdown renders as garbage, and make sure
+            # the log ends with a newline so the closing fence stays on its own line.
+            sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' \
+              "$RUNNER_TEMP/failed-job-${job_id}.log" > "$plain_log"
+            [ -z "$(tail -c 1 "$plain_log")" ] || echo >> "$plain_log"
+            log_bytes=$(wc -c < "$plain_log")
+            # A five-backtick fence survives triple-backtick blocks inside the log.
             {
-              echo "### ${job_name} (job ${job_id}), last ${LOG_TAIL_LINES} lines"
-              echo
-              echo '`````text'
-              tail -n "$LOG_TAIL_LINES" "$RUNNER_TEMP/failed-job-${job_id}.log" \
-                | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
+              if [ "$log_bytes" -le "$max_log_bytes" ]; then
+                echo "### ${job_name} (job ${job_id})"
+                echo
+                echo '`````text'
+                cat "$plain_log"
+              else
+                echo "### ${job_name} (job ${job_id}), last ${max_log_bytes} of ${log_bytes} bytes"
+                echo
+                echo '`````text'
+                # The failure is near the end of the log; drop the line the byte cut split.
+                tail -c "$max_log_bytes" "$plain_log" | tail -n +2
+              fi
               echo '`````'
               echo
             } >> "$GITHUB_STEP_SUMMARY"
