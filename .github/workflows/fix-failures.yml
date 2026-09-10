@@ -59,6 +59,34 @@ jobs:
           set -euo pipefail
           while IFS= read -r job_id; do
             [ -n "$job_id" ] || continue
-            gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" \
-              > "$RUNNER_TEMP/failed-job-${job_id}.zip"
+            # Job logs are plain text that keeps ANSI colour codes from the failed steps.
+            gh api --allow-escape-sequences \
+              "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" \
+              > "$RUNNER_TEMP/failed-job-${job_id}.log"
+          done < "$RUNNER_TEMP/failed-job-ids.txt"
+
+      - name: Show collected logs in the job summary
+        env:
+          LOG_TAIL_LINES: "50"
+        run: |
+          set -euo pipefail
+          if [ ! -s "$RUNNER_TEMP/failed-job-ids.txt" ]; then
+            echo "No failed jobs found in the source attempt." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          while IFS= read -r job_id; do
+            [ -n "$job_id" ] || continue
+            job_name=$(jq -r --argjson id "$job_id" \
+              '.[] | .jobs[]? | select(.id == $id) | .name' "$RUNNER_TEMP/source-jobs.json")
+            # A five-backtick fence survives triple-backtick blocks inside the log;
+            # ANSI colour codes are stripped because Markdown renders them as garbage.
+            {
+              echo "### ${job_name} (job ${job_id}), last ${LOG_TAIL_LINES} lines"
+              echo
+              echo '`````text'
+              tail -n "$LOG_TAIL_LINES" "$RUNNER_TEMP/failed-job-${job_id}.log" \
+                | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
+              echo '`````'
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
           done < "$RUNNER_TEMP/failed-job-ids.txt"
