@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    // Node runs the .ts sources directly, so tsc only type-checks.
+    "noEmit": true,
+    "target": "es2024",
+    "lib": ["es2024"],
+    "types": ["node"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+
+    // Reject syntax Node's type stripping cannot run (enum, namespace, parameter properties)
+    // and require the `.ts` extensions and `import type` it needs.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

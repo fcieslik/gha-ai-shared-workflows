@@ -23,9 +23,14 @@ on:
         description: Revision used when the caller has no branch or ref.
         required: true
         type: string
+    secrets:
+      OPENAI_API_KEY:
+        description: OpenAI API key the agents use. Called workflows only see secrets the caller passes.
+        required: true
 
 permissions:
   actions: read
+  contents: read
 
 jobs:
   fix-failures:
@@ -46,9 +51,11 @@ jobs:
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/attempts/${SOURCE_RUN_ATTEMPT}/jobs?per_page=100" \
             > "$RUNNER_TEMP/source-jobs.json"
-          jq -c '.[] | .jobs[]? | select(.conclusion == "failure") |
-            {id, name, conclusion, failed_steps: [.steps[]? | select(.conclusion == "failure") | .name]}' \
-            "$RUNNER_TEMP/source-jobs.json"
+          # The manifest is the agents' input; log_path names the file the next step writes.
+          jq --arg log_dir "$RUNNER_TEMP" '[.[] | .jobs[]? | select(.conclusion == "failure") |
+            {id, name, conclusion, failed_steps: [.steps[]? | select(.conclusion == "failure") | .name],
+             log_path: "\($log_dir)/failed-job-\(.id).log"}]' \
+            "$RUNNER_TEMP/source-jobs.json" | tee "$RUNNER_TEMP/failed-jobs.json"
           jq -r '.[] | .jobs[]? | select(.conclusion == "failure") | .id' \
             "$RUNNER_TEMP/source-jobs.json" > "$RUNNER_TEMP/failed-job-ids.txt"
 
@@ -106,3 +113,32 @@ jobs:
               echo
             } >> "$GITHUB_STEP_SUMMARY"
           done < "$RUNNER_TEMP/failed-job-ids.txt"
+
+      - name: Check out the fix-failures agents
+        uses: actions/checkout@v7
+        with:
+          # Without these, checkout fetches the caller's repository instead of this one.
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: fix-failures
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: fix-failures/.node-version
+          # The npm cache is shared with the caller's other workflows, so it could be poisoned.
+          package-manager-cache: false
+
+      - name: Install agent dependencies
+        working-directory: fix-failures
+        # Node strips types itself, so TypeScript and Biome are not needed to run the agents.
+        run: npm ci --omit=dev --ignore-scripts
+
+      - name: Triage failures
+        working-directory: fix-failures
+        env:
+          FAILED_JOBS_PATH: ${{ runner.temp }}/failed-jobs.json
+          # Scoped to this step so the log-collecting steps never see the key.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node agents/triage.ts

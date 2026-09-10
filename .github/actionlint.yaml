@@ -1,0 +1,6 @@
+# actionlint 1.7.12 does not know the job.workflow_* context yet.
+# Remove once https://github.com/rhysd/actionlint/issues/705 is fixed.
+paths:
+  .github/workflows/fix-failures.yml:
+    ignore:
+      - 'property "workflow_(repository|sha)" is not defined in object type'

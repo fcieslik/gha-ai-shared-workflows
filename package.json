@@ -1,0 +1,37 @@
+{
+  "name": "gha-ai-shared-workflows",
+  "version": "1.0.0",
+  "description": "",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "check": "tsc",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fcieslik/gha-ai-shared-workflows.git"
+  },
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/fcieslik/gha-ai-shared-workflows/issues"
+  },
+  "homepage": "https://github.com/fcieslik/gha-ai-shared-workflows#readme",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@openai/agents": "^0.18.0",
+    "zod": "^4.6.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.13",
+    "@types/node": "^24.13.4",
+    "typescript": "^7.0.2"
+  }
+}

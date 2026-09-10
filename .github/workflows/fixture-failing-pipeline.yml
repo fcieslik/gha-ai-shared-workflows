@@ -25,3 +25,5 @@ jobs:
       source_workflow: ${{ github.workflow }}
       source_ref: ${{ github.head_ref || github.ref }}
       source_sha: ${{ github.sha }}
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
