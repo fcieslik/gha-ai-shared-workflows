@@ -1,9 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { setDefaultOpenAIKey } from "@openai/agents";
-import { Agent, run } from "@openai/agents";
+import {
+  Agent,
+  run,
+  setTracingExportApiKey,
+  setDefaultOpenAIKey,
+} from "@openai/agents";
 
-setDefaultOpenAIKey(process.env.OPENAI_API_KEY!);
+const apiKey = process.env.OPENAI_API_KEY!;
+setDefaultOpenAIKey(apiKey);
+setTracingExportApiKey(apiKey);
 
 const FailedJobs = z.array(
   z.object({
@@ -20,7 +26,7 @@ const failedJobs = FailedJobs.parse(
 );
 
 const agent = new Agent({
-  name: "History Tutor",
+  name: "Triage Agent",
   instructions:
     "You provide assistance with historical queries. Explain important events and context clearly.",
 });

@@ -41,6 +41,24 @@ jobs:
         ${{ inputs.source_ref || inputs.source_sha }}
       cancel-in-progress: true
     steps:
+      - name: Describe the caller run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" > "$RUNNER_TEMP/source-run.json"
+          default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
+          jq --arg repository "$GITHUB_REPOSITORY" --arg default_branch "$default_branch" \
+            --argjson attempt "$SOURCE_RUN_ATTEMPT" '{
+              repository: $repository, default_branch: $default_branch,
+              workflow: .name, workflow_path: .path, run_id: .id, attempt: $attempt, url: .html_url,
+              event, branch: .head_branch, sha: .head_sha, title: .display_title, created_at,
+              pull_requests: [.pull_requests[]? |
+                {number, head_branch: .head.ref, base_branch: .base.ref, base_sha: .base.sha}]
+            }' "$RUNNER_TEMP/source-run.json" | tee "$RUNNER_TEMP/run-context.json"
+
       - name: Fetch failed jobs from the caller attempt
         env:
           GH_TOKEN: ${{ github.token }}
@@ -114,6 +132,144 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           done < "$RUNNER_TEMP/failed-job-ids.txt"
 
+      - name: Extract error excerpts from the failed job logs
+        env:
+          # Lines kept before each ##[error] marker; enough for a typical stack trace.
+          EXCERPT_CONTEXT_LINES: "80"
+        run: |
+          set -euo pipefail
+          while IFS= read -r job_id; do
+            [ -n "$job_id" ] || continue
+            excerpt="$RUNNER_TEMP/failed-job-${job_id}.excerpt.log"
+            # The runner writes ##[error] when a step fails. Keep the lines leading up to each
+            # marker, merging overlapping windows, and fall back to the log tail without markers.
+            sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' "$RUNNER_TEMP/failed-job-${job_id}.log" |
+              awk -v context_lines="$EXCERPT_CONTEXT_LINES" '
+                { line[NR] = $0 }
+                /##\[error\]/ {
+                  start = NR - context_lines
+                  if (start < 1) start = 1
+                  if (printed > 0 && start > printed + 1) print "..."
+                  if (start <= printed) start = printed + 1
+                  for (i = start; i <= NR; i++) print line[i]
+                  printed = NR
+                }
+                END {
+                  if (printed == 0) {
+                    start = NR - context_lines
+                    if (start < 1) start = 1
+                    for (i = start; i <= NR; i++) print line[i]
+                  }
+                }
+              ' > "$excerpt"
+            jq -n --argjson job_id "$job_id" --rawfile excerpt "$excerpt" \
+              --slurpfile failed_jobs "$RUNNER_TEMP/failed-jobs.json" '{
+                job_id: $job_id,
+                job_name: ($failed_jobs[0][] | select(.id == $job_id) | .name),
+                excerpt: $excerpt
+              }'
+          done < "$RUNNER_TEMP/failed-job-ids.txt" | jq -s . > "$RUNNER_TEMP/error-excerpts.json"
+          jq -r '.[] | "\(.job_name): \(.excerpt | split("\n") | length) lines"' \
+            "$RUNNER_TEMP/error-excerpts.json"
+
+      - name: Find changes since the last successful run
+        # Missing context should not stop triage; the agent copes with an absent file.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          context="$RUNNER_TEMP/run-context.json"
+          output="$RUNNER_TEMP/changes-since-last-success.json"
+          workflow_id=$(jq -r .workflow_id "$RUNNER_TEMP/source-run.json")
+          branch=$(jq -r '.branch // empty' "$context")
+          base_branch=$(jq -r '.pull_requests[0].base_branch // .default_branch' "$context")
+          sha=$(jq -r .sha "$context")
+          created_at=$(jq -r .created_at "$context")
+
+          # Prefer the last green run of this workflow on the same branch, so the diff holds only
+          # what could have broken it. Otherwise compare with the base branch, then the parent commit.
+          base_kind=none
+          base_ref=""
+          base_run=null
+          if [ -n "$branch" ]; then
+            base_run=$(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs" \
+                -f branch="$branch" -f status=success -f per_page=20 |
+              jq -c --arg created_at "$created_at" '[.workflow_runs[] | select(.created_at < $created_at) |
+                {id, sha: .head_sha, created_at, url: .html_url}][0]')
+            if [ "$base_run" != null ]; then
+              base_kind=last_successful_run
+              base_ref=$(jq -r .sha <<< "$base_run")
+            fi
+          fi
+          if [ "$base_kind" = none ] && [ -n "$branch" ] && [ "$branch" != "$base_branch" ]; then
+            base_kind=base_branch
+            base_ref=$base_branch
+          fi
+          if [ "$base_kind" = none ]; then
+            base_ref=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}" --jq '.parents[0].sha // ""')
+            [ -z "$base_ref" ] || base_kind=parent_commit
+          fi
+
+          if [ "$base_kind" = none ]; then
+            jq -n '{base_kind: "none", reason: "Nothing to compare with: no successful run, base branch or parent commit."}' \
+              > "$output"
+          elif gh api "repos/${GITHUB_REPOSITORY}/compare/${base_ref}...${sha}" > "$RUNNER_TEMP/compare.json"; then
+            # The compare API returns at most 250 commits and 300 files.
+            jq --arg base_kind "$base_kind" --arg base_ref "$base_ref" --argjson base_run "$base_run" '{
+                base_kind: $base_kind, base_ref: $base_ref, base_run: $base_run,
+                status, ahead_by, behind_by, total_commits, merge_base_sha: .merge_base_commit.sha,
+                commits: [.commits[] | {sha, author: .commit.author.name, message: (.commit.message | split("\n")[0])}],
+                files_truncated: ((.files | length) >= 300),
+                files: [.files[]? | {filename, previous_filename, status, additions, deletions}]
+              }' "$RUNNER_TEMP/compare.json" > "$output"
+          else
+            jq -n --arg base_kind "$base_kind" --arg base_ref "$base_ref" \
+              '{base_kind: $base_kind, base_ref: $base_ref, reason: "The compare request failed; the base commit may no longer exist."}' \
+              > "$output"
+          fi
+          cat "$output"
+
+      - name: Fetch recent runs of the caller workflow
+        # Missing context should not stop triage; the agent copes with an absent file.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECENT_RUN_COUNT: "10"
+        run: |
+          set -euo pipefail
+          context="$RUNNER_TEMP/run-context.json"
+          workflow_id=$(jq -r .workflow_id "$RUNNER_TEMP/source-run.json")
+          run_id=$(jq -r .run_id "$context")
+          attempt=$(jq -r .attempt "$context")
+          branch=$(jq -r '.branch // empty' "$context")
+          default_branch=$(jq -r .default_branch "$context")
+
+          completed_runs_on() {
+            gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs" \
+                -f branch="$1" -f status=completed -f per_page="$RECENT_RUN_COUNT" |
+              jq -c --argjson run_id "$run_id" '[.workflow_runs[] | select(.id != $run_id) |
+                {id, attempt: .run_attempt, sha: .head_sha, event, conclusion, created_at, url: .html_url}]'
+          }
+          branch_runs=null
+          [ -z "$branch" ] || branch_runs=$(completed_runs_on "$branch")
+          # A red default branch suggests the failure is not caused by this branch's changes.
+          default_branch_runs=null
+          [ "$branch" = "$default_branch" ] || default_branch_runs=$(completed_runs_on "$default_branch")
+          # Earlier attempts of the same run show whether a re-run changed the outcome.
+          previous_attempts=$(for ((n = 1; n < attempt; n++)); do
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/attempts/${n}" \
+                --jq '{attempt: .run_attempt, conclusion, url: .html_url}'
+            done | jq -s -c .)
+
+          jq -n --arg branch "$branch" --arg default_branch "$default_branch" \
+            --argjson branch_runs "$branch_runs" --argjson default_branch_runs "$default_branch_runs" \
+            --argjson previous_attempts "$previous_attempts" '{
+              branch: {name: $branch, runs: $branch_runs},
+              default_branch: {name: $default_branch, runs: $default_branch_runs},
+              previous_attempts: $previous_attempts
+            }' | tee "$RUNNER_TEMP/recent-runs.json"
+
       - name: Check out the fix-failures agents
         uses: actions/checkout@v7
         with:
@@ -138,7 +294,12 @@ jobs:
       - name: Triage failures
         working-directory: fix-failures
         env:
+          RUN_CONTEXT_PATH: ${{ runner.temp }}/run-context.json
           FAILED_JOBS_PATH: ${{ runner.temp }}/failed-jobs.json
+          ERROR_EXCERPTS_PATH: ${{ runner.temp }}/error-excerpts.json
+          # Absent when their collection step failed.
+          CHANGES_SINCE_LAST_SUCCESS_PATH: ${{ runner.temp }}/changes-since-last-success.json
+          RECENT_RUNS_PATH: ${{ runner.temp }}/recent-runs.json
           # Scoped to this step so the log-collecting steps never see the key.
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: node agents/triage.ts
