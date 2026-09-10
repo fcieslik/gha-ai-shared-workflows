@@ -1,0 +1,64 @@
+name: Fix failures
+
+on:
+  workflow_call:
+    inputs:
+      source_run_id:
+        description: Identifier of the caller workflow run.
+        required: true
+        type: string
+      source_run_attempt:
+        description: Attempt number of the caller workflow run.
+        required: true
+        type: string
+      source_workflow:
+        description: Name of the caller workflow.
+        required: true
+        type: string
+      source_ref:
+        description: Branch or ref of the caller workflow.
+        required: false
+        type: string
+      source_sha:
+        description: Revision used when the caller has no branch or ref.
+        required: true
+        type: string
+
+permissions:
+  actions: read
+
+jobs:
+  fix-failures:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: >-
+        fix-failures-${{ inputs.source_workflow }}-
+        ${{ inputs.source_ref || inputs.source_sha }}
+      cancel-in-progress: true
+    steps:
+      - name: Fetch failed jobs from the caller attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/attempts/${SOURCE_RUN_ATTEMPT}/jobs?per_page=100" \
+            > "$RUNNER_TEMP/source-jobs.json"
+          jq -c '.[] | .jobs[]? | select(.conclusion == "failure") |
+            {id, name, conclusion, failed_steps: [.steps[]? | select(.conclusion == "failure") | .name]}' \
+            "$RUNNER_TEMP/source-jobs.json"
+          jq -r '.[] | .jobs[]? | select(.conclusion == "failure") | .id' \
+            "$RUNNER_TEMP/source-jobs.json" > "$RUNNER_TEMP/failed-job-ids.txt"
+
+      - name: Fetch logs for every failed job
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r job_id; do
+            [ -n "$job_id" ] || continue
+            gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" \
+              > "$RUNNER_TEMP/failed-job-${job_id}.zip"
+          done < "$RUNNER_TEMP/failed-job-ids.txt"

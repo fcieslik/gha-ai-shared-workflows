@@ -1,0 +1,27 @@
+name: Fixture failing pipeline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  fail:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run intentionally failing fixture
+        run: bash fixtures/failing-pipeline/fails.sh
+
+  collect-failure-diagnostics:
+    if: ${{ failure() }}
+    needs: fail
+    uses: ./.github/workflows/fix-failures.yml
+    with:
+      source_run_id: ${{ github.run_id }}
+      source_run_attempt: ${{ github.run_attempt }}
+      source_workflow: ${{ github.workflow }}
+      source_ref: ${{ github.head_ref || github.ref }}
+      source_sha: ${{ github.sha }}
