@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run intentionally failing fixture
-        run: bash fixtures/failing-pipeline/fails.sh
+        run: node fixtures/failing-pipeline/fails.js
 
   collect-failure-diagnostics:
     if: ${{ failure() }}
