@@ -11,10 +11,15 @@
 | `ERROR_EXCERPTS_PATH` | `error-excerpts.json` | `Extract error excerpts from the failed job logs` | zawsze; `[]`, gdy nic nie padło |
 | `CHANGES_SINCE_LAST_SUCCESS_PATH` | `changes-since-last-success.json` | `Find changes since the last successful run` | może nie istnieć (`continue-on-error`) |
 | `RECENT_RUNS_PATH` | `recent-runs.json` | `Fetch recent runs of the caller workflow` | może nie istnieć (`continue-on-error`) |
+| `SOURCE_CHECKOUT_PATH` | katalog `source/` w `$GITHUB_WORKSPACE` | `Check out the caller repository at the failed commit` | może nie istnieć (`continue-on-error`) |
 
-Agent musi obsłużyć brak dwóch ostatnich plików oraz ich wersje zdegradowane opisane niżej. Summary z logami renderuje się przed nowymi krokami, więc ich błąd go nie ukrywa.
+Agent musi obsłużyć brak `CHANGES_SINCE_LAST_SUCCESS_PATH`, `RECENT_RUNS_PATH` i `SOURCE_CHECKOUT_PATH` oraz wersje zdegradowane plików opisane niżej. Summary z logami renderuje się przed nowymi krokami, więc ich błąd go nie ukrywa.
 
-Obecnie `agents/triage.ts` czyta `RUN_CONTEXT_PATH`, `FAILED_JOBS_PATH`, `ERROR_EXCERPTS_PATH` i pełne logi spod `log_path`. `CHANGES_SINCE_LAST_SUCCESS_PATH` i `RECENT_RUNS_PATH` workflow już przekazuje, ale czytać je będą dopiero zaplanowani analitycy zmian i historii ([triage-agents.md](triage-agents.md)).
+`agents/triage.ts` czyta `RUN_CONTEXT_PATH`, `FAILED_JOBS_PATH`, `ERROR_EXCERPTS_PATH` i pełne logi spod `log_path`. `CHANGES_SINCE_LAST_SUCCESS_PATH` i `RECENT_RUNS_PATH` czyta analityk historii, a w `SOURCE_CHECKOUT_PATH` lider uruchamia polecenia shella ([triage-agents.md](triage-agents.md)).
+
+## `source/`
+
+Checkout repozytorium wywołującego na `inputs.source_sha`, z `fetch-depth: 1` i `persist-credentials: false`, więc bez historii git i bez tokenu w `.git/config`. Workflow niczego z niego nie instaluje ani nie uruchamia; czyta go tylko lider przez shell ([ADR 0005](adr/0005-triage-agent-reads-repo-with-shell.md)).
 
 ## `run-context.json`
 
@@ -121,6 +126,6 @@ Historia pozwala odróżnić regresję od flaky testu albo czerwonej gałęzi do
 
 ## Uwagi o środowisku agentów
 
-- Agenci są w tym repozytorium, więc workflow robi checkout `job.workflow_repository` na `job.workflow_sha`, a nie repozytorium wywołującego. actionlint 1.7.12 nie zna tych pól, stąd wąski wyjątek w `.github/actionlint.yaml` do czasu naprawy [rhysd/actionlint#705](https://github.com/rhysd/actionlint/issues/705).
+- Agenci są w tym repozytorium, więc workflow robi checkout `job.workflow_repository` na `job.workflow_sha` do `fix-failures/`, niezależnie od checkoutu repozytorium wywołującego do `source/`. actionlint 1.7.12 nie zna tych pól, stąd wąski wyjątek w `.github/actionlint.yaml` do czasu naprawy [rhysd/actionlint#705](https://github.com/rhysd/actionlint/issues/705).
 - Node 24 uruchamia pliki `.ts` bez kompilacji (usuwanie typów). `tsconfig.json` ma `erasableSyntaxOnly` i `allowImportingTsExtensions`, żeby `tsc` odrzucał kod, którego Node nie uruchomi (`enum`, `namespace`, importy bez `.ts`).
 - Lint i formatowanie robi Biome, a nie ESLint, bo `typescript-eslint` obsługuje tylko TypeScript poniżej 6.1, a projekt używa TypeScript 7.

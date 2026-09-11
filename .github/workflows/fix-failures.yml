@@ -271,6 +271,17 @@ jobs:
               previous_attempts: $previous_attempts
             }' | tee "$RUNNER_TEMP/recent-runs.json"
 
+      - name: Check out the caller repository at the failed commit
+        # Only the triage lead's shell reads it; nothing from it is installed or run.
+        # Missing code should not stop triage.
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: source
+          # The lead's shell can read .git/config, so the token must not be stored there.
+          persist-credentials: false
+
       - name: Check out the fix-failures agents
         uses: actions/checkout@v7
         with:
@@ -301,6 +312,8 @@ jobs:
           # Absent when their collection step failed.
           CHANGES_SINCE_LAST_SUCCESS_PATH: ${{ runner.temp }}/changes-since-last-success.json
           RECENT_RUNS_PATH: ${{ runner.temp }}/recent-runs.json
+          # Absent when the checkout failed; the lead's shell then reports it as unavailable.
+          SOURCE_CHECKOUT_PATH: ${{ github.workspace }}/source
           # Scoped to this step so the log-collecting steps never see the key.
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: node agents/triage.ts

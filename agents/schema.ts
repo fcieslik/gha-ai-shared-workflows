@@ -83,7 +83,8 @@ export const TriageVerdictSchema = z.object({
   follow_ups: z
     .array(
       z.object({
-        // Only the log analyst exists so far; extend with history and changes (ADR 0004).
+        // Only the log analyst can take follow-ups; the history analyst answers in one turn
+        // from the collected files (ADR 0004).
         agent: z.enum(["logs"]),
         request: z.string(),
       }),

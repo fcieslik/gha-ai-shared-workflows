@@ -4,7 +4,7 @@ Zbieranie danych o failure zostaje deterministyczne i dzieje się w bashu przed 
 
 Treści nie przekazujemy w zmiennych, argumentach ani outputach kroków: logi mają megabajty, a Linux ogranicza pojedynczy argument lub zmienną do ok. 128 KB, outputy kroków też mają limity. Kroki są w jednym jobie, więc dzielą dysk i plik jest najprostszym nośnikiem.
 
-Wszystkie wywołania GitHub API są w krokach zbierania. Proces agenta nie dostaje tokenu GitHub i czyta tylko przygotowane pliki, więc instrukcje wstrzyknięte przez log albo opis zmiany nie mogą sięgnąć do repozytorium.
+Wszystkie wywołania GitHub API są w krokach zbierania. Proces agenta nie dostaje tokenu GitHub, więc instrukcje wstrzyknięte przez log albo opis zmiany nie mogą niczego zmienić w repozytorium ani pobrać nowych danych z API. Oprócz przygotowanych plików lider czyta checkout repozytorium wywołującego przez shell ([ADR 0005](0005-triage-agent-reads-repo-with-shell.md)).
 
 Kroki heurystyczne (zmiany, historia) mają `continue-on-error`: ich błąd oznacza mniej kontekstu, a nie brak triage. Brak bazy albo nieudane porównanie zapisuje plik z polem `reason`. Summary z logami renderuje się przed nowymi krokami.
 

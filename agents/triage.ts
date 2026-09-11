@@ -5,10 +5,13 @@ import {
   run,
   setDefaultOpenAIKey,
   setTracingExportApiKey,
+  shellTool,
 } from "@openai/agents";
 import OpenAI from "openai";
 import { TRIAGE_AGENT_INSTRUCTIONS } from "./instructions.ts";
 import { type TriageVerdict, TriageVerdictSchema } from "./schema.ts";
+import { createSourceShell } from "./source-shell.ts";
+import { runHistoryAnalyst } from "./subagents/history-analitics/main.ts";
 import { runLogAnalyst } from "./subagents/log-analitics/main.ts";
 import {
   loadErrorExcerpts,
@@ -17,8 +20,11 @@ import {
 } from "./subagents/log-analitics/utils.ts";
 
 // Confidence levels the fixing agent may act on without a person checking the verdict first.
-// The prompt caps confidence at medium until change and history data exist.
+// Medium stays allowed because history and the repository checkout are optional, and without
+// them the lead seldom has grounds for high.
 const FIX_CONFIDENCE_LEVELS: TriageVerdict["confidence"][] = ["high", "medium"];
+// Bounds model calls; each shell call takes a turn.
+const TRIAGE_MAX_TURNS = 20;
 
 async function main() {
   const apiKey = process.env.OPENAI_API_KEY!;
@@ -32,18 +38,31 @@ async function main() {
   const failedJobs = await loadFailedJobs();
   const excerpts = await loadErrorExcerpts();
 
-  // Stage 1: the log analyst investigates the logs with its own tools and turn limit.
-  const logAnalysis = await withUploadedJobLogs(
-    new OpenAI({ apiKey }),
-    failedJobs,
-    (logFileIds) => runLogAnalyst(failedJobs, excerpts, logFileIds),
-  );
+  // Stage 1: the log and history analysts are independent, so they run in parallel.
+  const [logAnalysis, historyAnalysis] = await Promise.all([
+    withUploadedJobLogs(new OpenAI({ apiKey }), failedJobs, (logFileIds) =>
+      runLogAnalyst(failedJobs, excerpts, logFileIds),
+    ),
+    // History is optional context: its failure leaves the lead without it instead of
+    // stopping triage.
+    runHistoryAnalyst(runContext).catch((error) => {
+      console.error("History analyst failed:", error);
+      return null;
+    }),
+  ]);
 
-  // Stage 2: the triage agent has no tools or handoffs, so it can only judge the findings.
+  // Stage 2: the triage agent judges the findings and may read the repository at the failed
+  // commit through the shell (ADR 0005).
   const triageAgent = new Agent({
     name: "Triage Agent",
     model: "gpt-5.6-terra",
     instructions: TRIAGE_AGENT_INSTRUCTIONS,
+    tools: [
+      shellTool({
+        shell: createSourceShell(process.env.SOURCE_CHECKOUT_PATH),
+        needsApproval: false,
+      }),
+    ],
     outputType: TriageVerdictSchema,
   });
 
@@ -67,8 +86,36 @@ async function main() {
       "<log_findings>",
       JSON.stringify(logAnalysis, null, 2),
       "</log_findings>",
+      "<history_findings>",
+      JSON.stringify(historyAnalysis ?? "unavailable", null, 2),
+      "</history_findings>",
     ].join("\n"),
-    { maxTurns: 1 },
+    {
+      maxTurns: TRIAGE_MAX_TURNS,
+      errorHandlers: {
+        // Out of turns: ask for the verdict once more from what the lead has read so far.
+        async maxTurns({ runData }) {
+          const finalAnswer = await run(
+            triageAgent.clone({ modelSettings: { toolChoice: "none" } }),
+            [
+              ...runData.history,
+              {
+                role: "user",
+                content:
+                  "The shell budget is used up. Return your verdict from what you found so far.",
+              },
+            ],
+            { maxTurns: 1 },
+          );
+          if (!finalAnswer.finalOutput) {
+            throw new Error(
+              "Triage Agent gave no verdict after its shell budget.",
+            );
+          }
+          return { finalOutput: finalAnswer.finalOutput };
+        },
+      },
+    },
   );
 
   const verdict = result.finalOutput;
@@ -80,6 +127,7 @@ async function main() {
     run_context: runContext,
     failed_jobs: failedJobs,
     log_analysis: logAnalysis,
+    history_analysis: historyAnalysis,
     verdict,
     ready_for_fix:
       verdict.next_action === "fix" &&
