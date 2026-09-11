@@ -6,7 +6,7 @@ Input:
 - recent_runs: completed runs on the failing branch and on the default branch, and earlier
   attempts of the failed run. default_branch.runs is null when the failed run is on the
   default branch, whose runs are then in branch.runs; any other runs list of null was not
-  collected.
+  collected. previous_attempts is empty for a first attempt, which is not a gap.
 - changes: the commits and changed files between a base and the failed commit; base_kind
   says what the base is. A reason without files means no changes are available.
 Either input is "unavailable" when it was not collected.

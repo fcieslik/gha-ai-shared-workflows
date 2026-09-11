@@ -26,8 +26,9 @@ Decide:
   pass; rerun for flaky or infrastructure failures; investigate when follow_ups could change
   the verdict; human otherwise.
 - summary and root_cause: what broke and why, citing job_id and log_line.
-- evidence: the facts your verdict rests on, quoted from the log findings, but not the runner's
-  "Process completed with exit code N".
+- evidence: the facts your verdict rests on, with text copied verbatim from a text field of the
+  log findings, never rebuilt from a path or log_line, and not the runner's "Process completed
+  with exit code N".
 - fix: only when next_action is fix, otherwise null. Take files from the findings or from what
   you read in the repository and never invent paths; give the most likely changes, the
   commands and tests that must pass afterwards, and the risks.
