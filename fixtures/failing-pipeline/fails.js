@@ -8,7 +8,7 @@ function lineTotal(item) {
 }
 
 function cartTotal(items) {
-  return items.reduce((total, item) => total + lineTotal(item), 0);
+  return items.reduce((total, item) => total + lineTotal(item).toSplit(2), 0);
 }
 
 const total = cartTotal(cart);
