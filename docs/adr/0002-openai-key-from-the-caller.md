@@ -14,6 +14,6 @@ Konsekwencje:
 
 - `required: true` sprawdza tylko, czy secret jest przekazany, nie czy ma wartość.
 - PR z forków nie dostają secretów, więc triage się tam nie powiedzie.
-- Proces agenta ma klucz i czyta niezaufane logi, dlatego agent zostaje read-only, bez narzędzi sieciowych i shella.
+- Proces agenta ma klucz i czyta niezaufane logi, dlatego agent zostaje read-only, bez narzędzi sieciowych i shella w swoim procesie. Code interpreter po stronie OpenAI opisuje [ADR 0003](0003-log-analyst-code-interpreter.md).
 
 Zastępuje decyzję ze specyfikacji `.scratch/fix-failures/spec.md`, że etap diagnostyczny nie dostaje secretów i że triage LLM jest poza zakresem. Nadal obowiązuje: brak uprawnień zapisu (`actions: read`, `contents: read`) i brak checkoutu niezaufanego kodu.

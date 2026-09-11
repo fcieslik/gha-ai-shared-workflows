@@ -14,6 +14,8 @@
 
 Agent musi obsłużyć brak dwóch ostatnich plików oraz ich wersje zdegradowane opisane niżej. Summary z logami renderuje się przed nowymi krokami, więc ich błąd go nie ukrywa.
 
+Obecnie `agents/triage.ts` czyta `RUN_CONTEXT_PATH`, `FAILED_JOBS_PATH`, `ERROR_EXCERPTS_PATH` i pełne logi spod `log_path`. `CHANGES_SINCE_LAST_SUCCESS_PATH` i `RECENT_RUNS_PATH` workflow już przekazuje, ale czytać je będą dopiero zaplanowani analitycy zmian i historii ([triage-agents.md](triage-agents.md)).
+
 ## `run-context.json`
 
 Metadane runu z `GET actions/runs/{run_id}` i domyślna gałąź repozytorium.
@@ -54,12 +56,13 @@ Nieudane joby z bieżącej próby.
 
 ## `error-excerpts.json`
 
-Fragmenty logów wokół błędów, oczyszczone z ANSI, ze znacznikami czasu.
+Fragmenty logów wokół błędów, oczyszczone z ANSI, ze znacznikami czasu i numerami linii.
 
 ```json
-[{ "job_id": 103057723145, "job_name": "fail", "excerpt": "…\n2026-09-10T21:34:31.5061721Z ##[error]Process completed with exit code 1.\n" }]
+[{ "job_id": 103057723145, "job_name": "fail", "excerpt": "…\n42: 2026-09-10T21:34:31.5061721Z ##[error]Process completed with exit code 1.\n" }]
 ```
 
+- Każda linia zaczyna się od `N: `, czyli numeru linii w pełnym logu pod `log_path`. Usunięcie ANSI nie zmienia liczby linii, więc numery zgadzają się z tymi, które zwraca narzędzie `read_job_log`.
 - Runner pisze `##[error]`, gdy krok pada. Dla każdego znacznika zostaje do 80 wcześniejszych linii (`EXCERPT_CONTEXT_LINES`) i sam znacznik.
 - Nakładające się okna są łączone; przerwę między oknami oznacza linia `...`.
 - Bez żadnego `##[error]` fragment to ostatnie 80 linii logu.

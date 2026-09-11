@@ -143,6 +143,7 @@ jobs:
             excerpt="$RUNNER_TEMP/failed-job-${job_id}.excerpt.log"
             # The runner writes ##[error] when a step fails. Keep the lines leading up to each
             # marker, merging overlapping windows, and fall back to the log tail without markers.
+            # Each line keeps its number in the full log so the agent can read around it.
             sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' "$RUNNER_TEMP/failed-job-${job_id}.log" |
               awk -v context_lines="$EXCERPT_CONTEXT_LINES" '
                 { line[NR] = $0 }
@@ -151,14 +152,14 @@ jobs:
                   if (start < 1) start = 1
                   if (printed > 0 && start > printed + 1) print "..."
                   if (start <= printed) start = printed + 1
-                  for (i = start; i <= NR; i++) print line[i]
+                  for (i = start; i <= NR; i++) print i ": " line[i]
                   printed = NR
                 }
                 END {
                   if (printed == 0) {
                     start = NR - context_lines
                     if (start < 1) start = 1
-                    for (i = start; i <= NR; i++) print line[i]
+                    for (i = start; i <= NR; i++) print i ": " line[i]
                   }
                 }
               ' > "$excerpt"
