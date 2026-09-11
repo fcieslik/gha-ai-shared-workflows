@@ -3,7 +3,7 @@
 Triage Agent zgłaszał w `missing_context` braki, których nie dało się uzupełnić z logów: kodu pliku z błędu, informacji, czy workflow ma celowo padać, oraz historii i diffu. Historię i zmiany workflow już zbierał, więc czyta je nowy analityk historii, uruchamiany równolegle z analitykiem logów. Kodu nie było, więc:
 
 - `fix-failures.yml` robi checkout repozytorium wywołującego na `inputs.source_sha` do `source/` (`fetch-depth: 1`, `persist-credentials: false`, `continue-on-error`). Z tego checkoutu nic nie jest instalowane ani uruchamiane.
-- Lider dostaje `shellTool({ shell, needsApproval: false })` z lokalną implementacją `Shell` w `agents/source-shell.ts` i działa z `maxTurns: 20`. Po limicie kod wymusza werdykt z wyłączonymi narzędziami, jak u analityka logów.
+- Lider dostaje `shellTool({ shell, needsApproval: false })` z lokalną implementacją `Shell` w `agents/source-shell.ts` i działa z `maxTurns: 20`. `toolChoice: "required"` wymusza co najmniej jeden odczyt, bo z samym promptem lider nie uruchamiał shella. Po limicie kod wymusza werdykt z wyłączonymi narzędziami, jak u analityka logów.
 - Każde polecenie działa przez `bash -c` w `SOURCE_CHECKOUT_PATH`, ze środowiskiem ograniczonym do `PATH`, `HOME` i `LANG`, z timeoutem do 30 s i outputem obciętym do 20 000 znaków na strumień. Brak checkoutu zwraca komunikat w `stderr`, a nie błąd, więc triage trwa dalej.
 - Prompt pozwala tylko na polecenia do odczytu (`ls`, `find`, `cat`, `sed -n`, `grep -rn`). To prośba do modelu, a nie blokada.
 

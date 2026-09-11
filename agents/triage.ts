@@ -59,6 +59,10 @@ async function main() {
   const triageAgent = new Agent({
     name: "Triage Agent",
     model: "gpt-5.6-terra",
+    // With the SDK defaults (no reasoning) and an optional shell, the lead never read the
+    // repository. required forces the first turn to call the shell; the SDK resets tool choice
+    // after a tool call (resetToolChoice), so the lead can still answer.
+    modelSettings: { reasoning: { effort: "low" }, toolChoice: "required" },
     instructions: TRIAGE_AGENT_INSTRUCTIONS,
     tools: [
       shellTool({
@@ -104,7 +108,12 @@ async function main() {
         // Out of turns: ask for the verdict once more from what the lead has read so far.
         async maxTurns({ runData }) {
           const finalAnswer = await run(
-            triageAgent.clone({ modelSettings: { toolChoice: "none" } }),
+            triageAgent.clone({
+              modelSettings: {
+                ...triageAgent.modelSettings,
+                toolChoice: "none",
+              },
+            }),
             [
               ...runData.history,
               {

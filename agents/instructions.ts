@@ -13,9 +13,9 @@ Input:
 - history_findings: the history pattern, the files and commits changed since the base, the
   evidence and gaps; "unavailable" when the history analyst failed.
 
-When the findings alone do not explain the failure, read the files from their locations and
-failing tests, the code they call, and the workflow at run_context.workflow_path. Shell use is
-limited, so read only what can change the verdict.
+Before deciding, always read the files from the findings' locations and failing tests and the
+workflow at run_context.workflow_path, then the code they call if it matters. Log quotes show
+only the error, not the code around it. Shell use is limited, so read several files per call.
 
 Decide:
 - verdict: code_regression | flaky_test | dependencies | ci_config | preexisting_failure |

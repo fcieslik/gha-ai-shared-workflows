@@ -26,6 +26,9 @@ export async function runHistoryAnalyst(failedRun: FailedRun) {
   const historyAnalyst = new Agent({
     name: "History analyst",
     model: "gpt-5.6-luna",
+    // The SDK default for this model is no reasoning, which labelled a run of failures a
+    // new_regression. Explicit settings replace the SDK defaults as a whole.
+    modelSettings: { reasoning: { effort: "low" } },
     instructions: HISTORY_ANALITICS_AGENT_INSTRUCTIONS,
     outputType: HistoryAnalysisSchema,
   });
