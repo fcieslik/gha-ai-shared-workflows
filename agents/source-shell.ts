@@ -138,7 +138,9 @@ export function createSourceShell(sourcePath: string | undefined): Shell {
           await runCommand(command, sourcePath, timeoutMs, maxOutputLength),
         );
       }
-      return { output, maxOutputLength };
+      // The API rejects a max_output_length that differs from the one in the shell call, so the
+      // model's value goes back unchanged even when the output was cut to the lower cap.
+      return { output, maxOutputLength: action.maxOutputLength };
     },
   };
 }
