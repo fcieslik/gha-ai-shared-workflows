@@ -55,7 +55,7 @@ Nieudane joby z bieżącej próby.
 
 ```json
 [{ "id": 103057723145, "name": "fail", "conclusion": "failure",
-   "failed_steps": ["Run intentionally failing fixture"],
+   "failed_steps": ["Calculate cart total"],
    "log_path": "/home/runner/work/_temp/failed-job-103057723145.log" }]
 ```
 

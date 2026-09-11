@@ -1,9 +1,16 @@
-const expectedStatus = "healthy";
-const actualStatus = "unhealthy";
+const cart = [
+  { name: "Keyboard", price: "49.90", quantity: 1 },
+  { name: "USB cable", price: "9.95", quantity: 2 },
+];
 
-if (actualStatus !== expectedStatus) {
-  // This is an intentional failure for testing purposes. Can you spot it?
-  throw new Error(
-    `Intentional fixture failure: expected ${expectedStatus}, received ${actualStatus}.`,
-  );
+function lineTotal(item) {
+  return Number.parseFloat(item.price) * item.quantity;
 }
+
+function cartTotal(items) {
+  return items.reduce((total, item) => total + lineTotal(item));
+  // return items.reduce((total, item) => total + lineTotal(item), 0);
+}
+
+const total = cartTotal(cart);
+console.log(`Cart total: ${total.toFixed(2)}`);

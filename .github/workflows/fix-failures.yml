@@ -36,7 +36,7 @@ jobs:
   fix-failures:
     runs-on: ubuntu-latest
     outputs:
-      # "true" only when the triage report allows a fix; the fixing job checks it in its if.
+      # "true" only when the triage report allows a fix; the fix job checks it in its if.
       ready_for_fix: ${{ steps.fix-gate.outputs.ready_for_fix }}
     concurrency:
       group: >-
@@ -349,3 +349,51 @@ jobs:
           name: triage-report
           path: ${{ runner.temp }}/triage-report.json
           if-no-files-found: error
+
+  fix:
+    # A separate job so the fixing agent can later get write permissions for commits and pull
+    # requests without the job that reads untrusted logs getting them too.
+    needs: fix-failures
+    if: needs.fix-failures.outputs.ready_for_fix == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the triage report
+        uses: actions/download-artifact@v8
+        with:
+          name: triage-report
+          path: ${{ runner.temp }}/triage-report
+
+      - name: Check out the fix-failures agents
+        uses: actions/checkout@v7
+        with:
+          # Without these, checkout fetches the caller's repository instead of this one.
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: fix-failures
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: fix-failures/.node-version
+          # The npm cache is shared with the caller's other workflows, so it could be poisoned.
+          package-manager-cache: false
+
+      - name: Install agent dependencies
+        working-directory: fix-failures
+        run: npm ci --omit=dev --ignore-scripts
+
+      # - name: Propose a fix
+      #   working-directory: fix-failures
+      #   env:
+      #     TRIAGE_REPORT_PATH: ${{ runner.temp }}/triage-report/triage-report.json
+      #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      #   run: node agents/fix.ts
+
+      - name: Run Codex to fix the failure
+        timeout-minutes: 15
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt: |
+            Analyze the CI failure and fix it.

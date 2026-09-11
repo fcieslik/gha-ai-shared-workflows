@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run intentionally failing fixture
+      - name: Calculate cart total
         run: node fixtures/failing-pipeline/fails.js
 
   collect-failure-diagnostics:

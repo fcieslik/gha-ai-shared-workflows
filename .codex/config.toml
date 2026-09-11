@@ -1,0 +1,25 @@
+```toml
+model = "gpt-5.6-terra"
+model_reasoning_effort = "high"
+personality = "pragmatic"
+
+# Fully autonomous — no approval prompts.
+approval_policy = "never"
+
+# Full access to the workspace.
+sandbox_mode = "workspace-write"
+allow_login_shell = true
+
+# Allow network access for package installation,
+# APIs, documentation, git operations, etc.
+[sandbox_workspace_write]
+network_access = false
+
+[tui]
+alternate_screen = "always"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4
+"gpt-5.6-sol" = 4
+"gpt-6-astra" = 4
+```
