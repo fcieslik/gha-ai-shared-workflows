@@ -4,7 +4,9 @@ tell whether the failure is new and what could have caused it.
 Input:
 - failed_run: id, commit and creation time of the failed run.
 - recent_runs: completed runs on the failing branch and on the default branch, and earlier
-  attempts of the failed run. A runs list of null was not collected.
+  attempts of the failed run. default_branch.runs is null when the failed run is on the
+  default branch, whose runs are then in branch.runs; any other runs list of null was not
+  collected.
 - changes: the commits and changed files between a base and the failed commit; base_kind
   says what the base is. A reason without files means no changes are available.
 Either input is "unavailable" when it was not collected.

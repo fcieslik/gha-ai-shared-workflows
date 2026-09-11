@@ -106,8 +106,10 @@ Kolejnością steruje kod w `agents/triage.ts`, a nie model. Błąd analityka hi
 `agents/triage.ts` wypisuje na stdout JSON przeznaczony dla agenta naprawiającego:
 
 ```json
-{ "run_context": {}, "failed_jobs": [], "log_analysis": {}, "history_analysis": {}, "verdict": {}, "ready_for_fix": false }
+{ "run_context": {}, "failed_jobs": [], "log_analysis": {}, "history_analysis": {}, "shell_commands": [], "verdict": {}, "ready_for_fix": false }
 ```
+
+- `shell_commands` to polecenia, które lider uruchomił w `source/`, w kolejności wywołań. Zapisuje je opakowanie `Shell` w `agents/triage.ts`, więc są też po wymuszonym werdykcie po limicie tur. Pusta lista znaczy, że lider nie czytał repozytorium.
 
 - `run_context`, `failed_jobs`, `log_analysis` i `history_analysis` kod dokleja bez zmian, więc nie zależą od tego, czy model poprawnie je przepisze. `history_analysis` jest `null`, gdy analityk historii padł.
 - `ready_for_fix` liczy kod: `next_action` to `fix`, `fix` nie jest `null`, a `confidence` należy do `FIX_CONFIDENCE_LEVELS` (`high`, `medium`). `medium` zostaje dopuszczone, bo historia i checkout repozytorium są opcjonalne (`continue-on-error`), a bez nich lider rzadko ma podstawy do `high`.
@@ -184,7 +186,9 @@ tell whether the failure is new and what could have caused it.
 Input:
 - failed_run: id, commit and creation time of the failed run.
 - recent_runs: completed runs on the failing branch and on the default branch, and earlier
-  attempts of the failed run. A runs list of null was not collected.
+  attempts of the failed run. default_branch.runs is null when the failed run is on the
+  default branch, whose runs are then in branch.runs; any other runs list of null was not
+  collected.
 - changes: the commits and changed files between a base and the failed commit; base_kind
   says what the base is. A reason without files means no changes are available.
 Either input is "unavailable" when it was not collected.

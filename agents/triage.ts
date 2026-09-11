@@ -53,21 +53,25 @@ async function main() {
 
   // Stage 2: the triage agent judges the findings and may read the repository at the failed
   // commit through the shell (ADR 0005).
+  const sourceShell = createSourceShell(process.env.SOURCE_CHECKOUT_PATH);
+  // Recorded in the shell itself, so the forced verdict after the turn limit keeps them too.
+  const shellCommands: string[] = [];
   const triageAgent = new Agent({
     name: "Triage Agent",
     model: "gpt-5.6-terra",
     instructions: TRIAGE_AGENT_INSTRUCTIONS,
     tools: [
       shellTool({
-        shell: createSourceShell(process.env.SOURCE_CHECKOUT_PATH),
+        shell: {
+          run(action) {
+            shellCommands.push(...action.commands);
+            return sourceShell.run(action);
+          },
+        },
         needsApproval: false,
       }),
     ],
     outputType: TriageVerdictSchema,
-  });
-
-  triageAgent.on("agent_tool_start", (ctx, agent) => {
-    console.log(`[${agent.name}] started ${ctx.approveTool.name}`);
   });
 
   const result = await run(
@@ -132,6 +136,7 @@ async function main() {
     failed_jobs: failedJobs,
     log_analysis: logAnalysis,
     history_analysis: historyAnalysis,
+    shell_commands: shellCommands,
     verdict,
     ready_for_fix:
       verdict.next_action === "fix" &&
