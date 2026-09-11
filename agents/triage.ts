@@ -33,7 +33,7 @@ const agent = new Agent({
 
 const result = await run(
   agent,
-  `Can you see the logs? can you see the error?\n\n <logs>${JSON.stringify(failedJobs, null, 2)}</logs>`,
+  `Can you see the logs? can you see the error? can you see which file caused the error? \n\n <logs>${JSON.stringify(failedJobs, null, 2)}</logs>`,
 );
 
 console.log(result.finalOutput);
