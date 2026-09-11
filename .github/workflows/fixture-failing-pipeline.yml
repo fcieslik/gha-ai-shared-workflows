@@ -2,6 +2,7 @@ name: Fixture failing pipeline
 
 on:
   workflow_dispatch:
+  pull_request:
 
 permissions:
   actions: read
@@ -27,3 +28,6 @@ jobs:
       source_sha: ${{ github.sha }}
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # Optional: without them the proposed fix is not commented on the pull request.
+      FIX_FAILURES_APP_CLIENT_ID: ${{ secrets.FIX_FAILURES_APP_CLIENT_ID }}
+      FIX_FAILURES_APP_PRIVATE_KEY: ${{ secrets.FIX_FAILURES_APP_PRIVATE_KEY }}

@@ -27,6 +27,12 @@ on:
       OPENAI_API_KEY:
         description: OpenAI API key the agents use. Called workflows only see secrets the caller passes.
         required: true
+      FIX_FAILURES_APP_CLIENT_ID:
+        description: Client ID of the GitHub App that comments the proposed fix on the pull request.
+        required: false
+      FIX_FAILURES_APP_PRIVATE_KEY:
+        description: Private key of that GitHub App. Without both secrets no comment is posted.
+        required: false
 
 permissions:
   actions: read
@@ -365,6 +371,28 @@ jobs:
           name: triage-report
           path: ${{ runner.temp }}/triage-report
 
+      - name: Read the pull request from the triage report
+        id: pull-request
+        env:
+          APP_CLIENT_ID: ${{ secrets.FIX_FAILURES_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.FIX_FAILURES_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/triage-report/triage-report.json"
+          number=$(jq -r '.run_context.pull_requests[0].number // empty' "$report")
+          # Comment only on a pull request, and only when the caller passes the GitHub App.
+          comment=false
+          if [ -n "$number" ] && [ -n "$APP_CLIENT_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+            comment=true
+          fi
+          {
+            # The run's head commit. For pull_request events github.sha is the test merge
+            # commit with the base branch, whose diff would not fit the pull request branch.
+            echo "sha=$(jq -r .run_context.sha "$report")"
+            echo "number=$number"
+            echo "comment=$comment"
+          } | tee -a "$GITHUB_OUTPUT"
+
       - name: Check out the fix-failures agents
         uses: actions/checkout@v7
         with:
@@ -395,7 +423,7 @@ jobs:
       - name: Check out the caller repository at the failed commit
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ steps.pull-request.outputs.sha }}
           # A subdirectory, so the agents checkout does not end up in Codex's working tree.
           path: source
           persist-credentials: false
@@ -439,3 +467,51 @@ jobs:
           model: gpt-5.6-terra
           prompt-file: ${{ runner.temp }}/codex-prompt.md
           working-directory: source
+          output-file: ${{ runner.temp }}/codex-final-message.md
+
+      - name: Create a GitHub App token
+        # Created only after Codex has finished, and limited to pull request comments.
+        if: steps.pull-request.outputs.comment == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.FIX_FAILURES_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FIX_FAILURES_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+
+      - name: Comment the proposed fix on the pull request
+        if: steps.pull-request.outputs.comment == 'true'
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pull-request.outputs.number }}
+        run: |
+          set -euo pipefail
+          # New files show up in the diff too.
+          git add --intent-to-add --all
+          git diff > "$RUNNER_TEMP/fix.diff"
+          {
+            jq -r '"### CI failure in \(.run_context.workflow)\n\n\(.verdict.summary)\n\n" +
+              "**Root cause:** \(.verdict.root_cause.description)\n\n[Failed run](\(.run_context.url))"' \
+              "$RUNNER_TEMP/triage-report/triage-report.json"
+            echo
+            echo "### Proposed fix"
+            echo
+            if [ -s "$RUNNER_TEMP/codex-final-message.md" ]; then
+              head -c 10000 "$RUNNER_TEMP/codex-final-message.md"
+              echo
+              echo
+            fi
+            if [ -s "$RUNNER_TEMP/fix.diff" ]; then
+              # GitHub rejects comments above 65536 characters. A five-backtick fence survives
+              # backticks inside the diff.
+              echo '`````diff'
+              head -c 40000 "$RUNNER_TEMP/fix.diff"
+              echo
+              echo '`````'
+            else
+              echo "Codex made no changes."
+            fi
+          } > "$RUNNER_TEMP/pr-comment.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/pr-comment.md"
