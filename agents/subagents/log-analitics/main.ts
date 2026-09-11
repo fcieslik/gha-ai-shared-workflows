@@ -37,7 +37,6 @@ const MODEL_SETTINGS: ModelSettings = {
   parallelToolCalls: true,
   // Without a timeout a hung call holds the CI job until the job times out.
   timeoutMs: 120_000,
-  temperature: 0.1,
   retry: {
     maxRetries: 3,
     backoff: {
