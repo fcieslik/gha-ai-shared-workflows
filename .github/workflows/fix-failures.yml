@@ -282,6 +282,15 @@ jobs:
           # The lead's shell can read .git/config, so the token must not be stored there.
           persist-credentials: false
 
+      - name: Share the caller repository with the isolated shell
+        # The lead's shell runs commands as nobody, who cannot enter /home/runner (0750 on
+        # Ubuntu), so the checkout is copied outside it, readable but not writable by others.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          cp -a source /tmp/fix-failures-source
+          chmod -R a+rX,go-w /tmp/fix-failures-source
+
       - name: Check out the fix-failures agents
         uses: actions/checkout@v7
         with:
@@ -312,8 +321,9 @@ jobs:
           # Absent when their collection step failed.
           CHANGES_SINCE_LAST_SUCCESS_PATH: ${{ runner.temp }}/changes-since-last-success.json
           RECENT_RUNS_PATH: ${{ runner.temp }}/recent-runs.json
-          # Absent when the checkout failed; the lead's shell then reports it as unavailable.
-          SOURCE_CHECKOUT_PATH: ${{ github.workspace }}/source
+          # The copy nobody can read; absent when the checkout or copy failed, and the lead's
+          # shell then reports it as unavailable.
+          SOURCE_CHECKOUT_PATH: /tmp/fix-failures-source
           # Scoped to this step so the log-collecting steps never see the key.
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: node agents/triage.ts

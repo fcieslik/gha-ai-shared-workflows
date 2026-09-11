@@ -14,6 +14,6 @@ Konsekwencje:
 
 - `required: true` sprawdza tylko, czy secret jest przekazany, nie czy ma wartość.
 - PR z forków nie dostają secretów, więc triage się tam nie powiedzie.
-- Proces agenta ma klucz i czyta niezaufane logi, dlatego agent zostaje read-only, bez narzędzi sieciowych. Code interpreter po stronie OpenAI opisuje [ADR 0003](0003-log-analyst-code-interpreter.md). Wyjątek: lider ma shell w swoim procesie do czytania checkoutu repozytorium wywołującego, z ryzykiem wyprowadzenia klucza opisanym w [ADR 0005](0005-triage-agent-reads-repo-with-shell.md).
+- Proces agenta ma klucz i czyta niezaufane logi, dlatego agent zostaje read-only, bez narzędzi sieciowych. Code interpreter po stronie OpenAI opisuje [ADR 0003](0003-log-analyst-code-interpreter.md). Wyjątek: lider ma shell do czytania checkoutu repozytorium wywołującego; polecenia działają jako `nobody`, więc nie mają dostępu do klucza w procesie agenta, ale mają sieć ([ADR 0005](0005-triage-agent-reads-repo-with-shell.md)).
 
 Zastępuje decyzję ze specyfikacji `.scratch/fix-failures/spec.md`, że etap diagnostyczny nie dostaje secretów i że triage LLM jest poza zakresem. Nadal obowiązuje brak uprawnień zapisu (`actions: read`, `contents: read`). Kod wywołującego jest pobierany tylko do odczytu przez lidera i nigdy nie jest uruchamiany ([ADR 0005](0005-triage-agent-reads-repo-with-shell.md)).

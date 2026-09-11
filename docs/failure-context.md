@@ -11,7 +11,7 @@
 | `ERROR_EXCERPTS_PATH` | `error-excerpts.json` | `Extract error excerpts from the failed job logs` | zawsze; `[]`, gdy nic nie padło |
 | `CHANGES_SINCE_LAST_SUCCESS_PATH` | `changes-since-last-success.json` | `Find changes since the last successful run` | może nie istnieć (`continue-on-error`) |
 | `RECENT_RUNS_PATH` | `recent-runs.json` | `Fetch recent runs of the caller workflow` | może nie istnieć (`continue-on-error`) |
-| `SOURCE_CHECKOUT_PATH` | katalog `source/` w `$GITHUB_WORKSPACE` | `Check out the caller repository at the failed commit` | może nie istnieć (`continue-on-error`) |
+| `SOURCE_CHECKOUT_PATH` | katalog `/tmp/fix-failures-source`, kopia `source/` z `$GITHUB_WORKSPACE` | `Check out the caller repository at the failed commit`, `Share the caller repository with the isolated shell` | może nie istnieć (`continue-on-error`) |
 
 Agent musi obsłużyć brak `CHANGES_SINCE_LAST_SUCCESS_PATH`, `RECENT_RUNS_PATH` i `SOURCE_CHECKOUT_PATH` oraz wersje zdegradowane plików opisane niżej. Summary z logami renderuje się przed nowymi krokami, więc ich błąd go nie ukrywa.
 
@@ -20,6 +20,8 @@ Agent musi obsłużyć brak `CHANGES_SINCE_LAST_SUCCESS_PATH`, `RECENT_RUNS_PATH
 ## `source/`
 
 Checkout repozytorium wywołującego na `inputs.source_sha`, z `fetch-depth: 1` i `persist-credentials: false`, więc bez historii git i bez tokenu w `.git/config`. Workflow niczego z niego nie instaluje ani nie uruchamia; czyta go tylko lider przez shell ([ADR 0005](adr/0005-triage-agent-reads-repo-with-shell.md)).
+
+Shell uruchamia polecenia jako `nobody`, który nie wejdzie do `/home/runner` (na Ubuntu prawa `0750`). Dlatego krok `Share the caller repository with the isolated shell` kopiuje checkout do `/tmp/fix-failures-source` (`cp -a`, potem `chmod -R a+rX,go-w`) i `SOURCE_CHECKOUT_PATH` wskazuje kopię. Właścicielem kopii zostaje `runner`, więc `nobody` może ją tylko czytać.
 
 ## `run-context.json`
 
