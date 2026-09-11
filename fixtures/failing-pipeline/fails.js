@@ -13,3 +13,5 @@ function cartTotal(items) {
 
 const total = cartTotal(cart);
 console.log(`Cart total: ${total.toFixed(2)}`);
+const expectedTotal = 69.8;
+console.log(`Expected total: ${expectedTotal.toFixed(2)}`);
