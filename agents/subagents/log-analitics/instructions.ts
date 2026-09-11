@@ -18,10 +18,13 @@ Report:
 - summary: what each job ran and where it stopped.
 - root_error_candidate: the error that most likely caused the failure, not its consequences
   and not "Process completed with exit code N", with your reasoning; null if none is visible.
-- kind: test_assertion | compile | dependencies | timeout_or_memory | network |
-  secrets_or_permissions | runner | unknown.
-- errors: every distinct error, including ones after the first.
-- warnings: warnings before the failure (deprecations, retries, fallbacks, version changes).
+- kind: test_assertion | compile | runtime_error | dependencies | timeout_or_memory |
+  network | secrets_or_permissions | runner | unknown. test_assertion is a failed assertion
+  in a test; runtime_error is an uncaught exception or crash outside one.
+- errors: every distinct error, including ones after the first, but not the runner's
+  "Process completed with exit code N", which only repeats that a step failed.
+- warnings: warnings before the failure (deprecations, retries, fallbacks, version changes),
+  but not setup notices unrelated to it, such as git hints during checkout.
 - environment: tool and runtime versions, runner image, and the commands that ran.
 - locations: file paths and lines from stack traces or tool output, in the repository's
   own code only (skip node_modules, the language runtime, and the runner).

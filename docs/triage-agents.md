@@ -32,7 +32,7 @@ Agentów dzielimy według pytania, na które odpowiadają, a nie według pliku. 
 |---|---|---|---|
 | `run-context.json` | kod, bez agenta | Rodzaj zdarzenia (PR, `push`, dispatch), gałąź, gałąź bazowa, czy to gałąź domyślna | Wejście lidera triage (`<run_context>`) i część raportu triage |
 | `failed-jobs.json` | kod, bez agenta | Które joby i kroki padły oraz gdzie jest pełny log | Wejście analityka logów (z `log_path` dla narzędzi), lidera triage (bez `log_path`) i część raportu triage |
-| `error-excerpts.json` | **analityk logów** | Wszystkie fakty z logów przydatne do hipotezy: przebieg joba, kandydat na pierwotny błąd (nie `exit code 1`), wszystkie błędy, ostrzeżenia, środowisko, pliki i testy, sygnały niestabilności, luki; każdy fakt z `job_id` i linią logu | `{summary, root_error_candidate, kind, errors, warnings, environment, locations, failing_tests, flaky_signals, gaps, confidence}` |
+| `error-excerpts.json` | **analityk logów** | Wszystkie fakty z logów przydatne do hipotezy: przebieg joba, kandydat na pierwotny błąd (nie `exit code 1`), wszystkie błędy (bez `Process completed with exit code N`), ostrzeżenia bez komunikatów kroków przygotowawczych, środowisko, pliki i testy, sygnały niestabilności, luki; każdy fakt z `job_id` i linią logu | `{summary, root_error_candidate, kind, errors, warnings, environment, locations, failing_tests, flaky_signals, gaps, confidence}` |
 | `changes-since-last-success.json` | **analityk zmian** (zaplanowany) | Pusty diff albo `identical`, rodzaje zmian (lockfile, CI, testy, kod), podejrzane pliki i commity | `{diff_empty, change_kinds, suspect_files, suspect_commits}` |
 | `recent-runs.json` | **analityk historii** (lub reguły w kodzie; zaplanowany) | Wzorzec wyników: nowa regresja, niestabilność, stały błąd, czerwona gałąź domyślna, brak historii | `{pattern, first_failing_run, evidence}` |
 
@@ -42,6 +42,7 @@ Agentów dzielimy według pytania, na które odpowiadają, a nie według pliku. 
 |---|---|
 | `test_assertion` | `expected 200, received 500`, `FAIL src/api.test.ts` |
 | `compile` | `error TS2345`, `SyntaxError` |
+| `runtime_error` | nieprzechwycony `Error: …` albo `TypeError: Cannot read properties of undefined` ze stackiem w kodzie repozytorium, poza asercją testu |
 | `dependencies` | `npm ERR! ERESOLVE`, `404 Not Found` przy instalacji |
 | `timeout_or_memory` | `exceeded the maximum execution time`, `heap out of memory` |
 | `network` | `ECONNRESET`, `503 Service Unavailable` |
@@ -112,6 +113,7 @@ Kolejnością steruje kod w `agents/triage.ts`, a nie model.
 - `run_context`, `failed_jobs` i `log_analysis` kod dokleja bez zmian, więc nie zależą od tego, czy model poprawnie je przepisze.
 - `ready_for_fix` liczy kod: `next_action` to `fix`, `fix` nie jest `null`, a `confidence` należy do `FIX_CONFIDENCE_LEVELS` (`high`, `medium`). `medium` jest dopuszczone, bo bez danych o zmianach i historii prompt nie pozwala liderowi na `high`.
 - Raport trafia na razie tylko do logu kroku `Triage failures`; workflow nie zapisuje go jako pliku ani artefaktu.
+- Przed `main()` skrypt wypisuje `::stop-commands::<losowy token>`, a w `finally` wypisuje `::<token>::`. Raport cytuje logi CI, a runner wykonuje komendy workflow, np. `##[error]`, także w środku linii. Bez tej pauzy runner przepisywał linie raportu w logu kroku (np. `"text": "##[error]…"` zmieniało się w `##[error]…`) i dodawał do joba fałszywe adnotacje. Z tekstu z logów dałoby się też wstrzyknąć inne komendy, np. `add-mask`. Losowy token uniemożliwia wznowienie przetwarzania komend przez cytowany tekst. Pauza obejmuje też komunikat `Triage failed:`.
 - Cały przepływ działa w `main()` z `try/catch`. Błąd dowolnego etapu (brak zmiennej, walidacja zod, API OpenAI, brak werdyktu) trafia na stderr jako `Triage failed:` ze stackiem i przyczyną, a skrypt kończy się kodem 1, więc krok `Triage failures` jest czerwony. Raport nie jest wtedy wypisywany. Wysłane logi i tak są usuwane w `finally` w `withUploadedJobLogs`.
 
 ## Implementacja w `@openai/agents`
@@ -152,10 +154,13 @@ Report:
 - summary: what each job ran and where it stopped.
 - root_error_candidate: the error that most likely caused the failure, not its consequences
   and not "Process completed with exit code N", with your reasoning; null if none is visible.
-- kind: test_assertion | compile | dependencies | timeout_or_memory | network |
-  secrets_or_permissions | runner | unknown.
-- errors: every distinct error, including ones after the first.
-- warnings: warnings before the failure (deprecations, retries, fallbacks, version changes).
+- kind: test_assertion | compile | runtime_error | dependencies | timeout_or_memory |
+  network | secrets_or_permissions | runner | unknown. test_assertion is a failed assertion
+  in a test; runtime_error is an uncaught exception or crash outside one.
+- errors: every distinct error, including ones after the first, but not the runner's
+  "Process completed with exit code N", which only repeats that a step failed.
+- warnings: warnings before the failure (deprecations, retries, fallbacks, version changes),
+  but not setup notices unrelated to it, such as git hints during checkout.
 - environment: tool and runtime versions, runner image, and the commands that ran.
 - locations: file paths and lines from stack traces or tool output, in the repository's
   own code only (skip node_modules, the language runtime, and the runner).
@@ -231,7 +236,8 @@ Decide:
   pass; rerun for flaky or infrastructure failures; investigate when follow_ups could change
   the verdict; human otherwise.
 - summary and root_cause: what broke and why, citing job_id and log_line.
-- evidence: the facts your verdict rests on, quoted from the findings.
+- evidence: the facts your verdict rests on, quoted from the findings, but not the runner's
+  "Process completed with exit code N".
 - fix: only when next_action is fix, otherwise null. Take files from the findings' locations
   and failing tests and never invent paths; give the most likely changes, the commands and
   tests from the findings that must pass afterwards, and the risks.
@@ -241,7 +247,7 @@ Decide:
 - missing_context: data that was not collected but would change the verdict, such as the
   diff, run history or test reports.
 
-Rules of thumb: an assertion or compile error in the repository's own code points to a
+Rules of thumb: an assertion, compile or runtime error in the repository's own code points to a
 code_regression; timeouts, races or network errors without a code error point to a flaky_test;
 install errors point to dependencies; failing workflow configuration points to ci_config; runner
 errors point to infrastructure. There is no change or run history data yet, so a regression

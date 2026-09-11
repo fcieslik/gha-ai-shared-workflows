@@ -18,7 +18,8 @@ Decide:
   pass; rerun for flaky or infrastructure failures; investigate when follow_ups could change
   the verdict; human otherwise.
 - summary and root_cause: what broke and why, citing job_id and log_line.
-- evidence: the facts your verdict rests on, quoted from the findings.
+- evidence: the facts your verdict rests on, quoted from the findings, but not the runner's
+  "Process completed with exit code N".
 - fix: only when next_action is fix, otherwise null. Take files from the findings' locations
   and failing tests and never invent paths; give the most likely changes, the commands and
   tests from the findings that must pass afterwards, and the risks.
@@ -28,7 +29,7 @@ Decide:
 - missing_context: data that was not collected but would change the verdict, such as the
   diff, run history or test reports.
 
-Rules of thumb: an assertion or compile error in the repository's own code points to a
+Rules of thumb: an assertion, compile or runtime error in the repository's own code points to a
 code_regression; timeouts, races or network errors without a code error point to a flaky_test;
 install errors point to dependencies; failing workflow configuration points to ci_config; runner
 errors point to infrastructure. There is no change or run history data yet, so a regression

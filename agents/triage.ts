@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
   Agent,
@@ -89,6 +90,12 @@ async function main() {
   console.log(JSON.stringify(triageReport, null, 2));
 }
 
+// The output quotes CI logs, and the runner executes workflow commands such as ##[error]
+// anywhere in a line, which rewrites the report in the step log and adds annotations.
+// Pausing command processing keeps the output verbatim; the random token stops quoted log
+// text from resuming it.
+const resumeCommandsToken = randomUUID();
+console.log(`::stop-commands::${resumeCommandsToken}`);
 try {
   await main();
 } catch (error) {
@@ -96,4 +103,6 @@ try {
   console.error("Triage failed:", error);
   // exitCode instead of exit() lets pending output flush before the step fails.
   process.exitCode = 1;
+} finally {
+  console.log(`::${resumeCommandsToken}::`);
 }

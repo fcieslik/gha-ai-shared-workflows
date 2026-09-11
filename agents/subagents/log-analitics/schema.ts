@@ -20,23 +20,31 @@ export const FailureAnalysisSchema = z.object({
     .describe(
       "The error that most likely caused the failure, or null if none is visible.",
     ),
-  kind: z.enum([
-    "test_assertion",
-    "compile",
-    "dependencies",
-    "timeout_or_memory",
-    "network",
-    "secrets_or_permissions",
-    "runner",
-    "unknown",
-  ]),
+  kind: z
+    .enum([
+      "test_assertion",
+      "compile",
+      "runtime_error",
+      "dependencies",
+      "timeout_or_memory",
+      "network",
+      "secrets_or_permissions",
+      "runner",
+      "unknown",
+    ])
+    .describe(
+      "test_assertion is a failed assertion in a test; runtime_error is an uncaught exception or crash outside one.",
+    ),
   errors: z
     .array(LogQuote)
-    .describe("Every distinct error, including ones after the first."),
+    .describe(
+      'Every distinct error, including ones after the first, but not the runner\'s "Process completed with exit code N".',
+    ),
   warnings: z
     .array(LogQuote)
     .describe(
-      "Warnings before the failure, such as deprecations, retries, fallbacks, or version changes.",
+      "Warnings before the failure, such as deprecations, retries, fallbacks, or version changes, " +
+        "but not setup notices unrelated to it, such as git hints during checkout.",
     ),
   environment: z
     .array(LogQuote)
