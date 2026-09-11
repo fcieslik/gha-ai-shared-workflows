@@ -61,6 +61,8 @@ Nieudane joby z bieżącej próby.
 
 `log_path` wskazuje pełny, surowy log joba, z kodami kolorów ANSI.
 
+Joby `fix-failures.yml` działają w runie wywołującego i API nazywa je `<job wywołujący> / <job>`. Krok pomija joby z nazwą kończącą się na ` / fix-failures` albo ` / fix`, żeby triage nie analizował własnych błędów. Dziś w czasie zbierania te joby i tak nie mają jeszcze `conclusion`, ale mogą je mieć po ponownym uruchomieniu samego triage albo przy kilku wywołaniach `fix-failures.yml` w jednym runie. Filtr po nazwie pominie też job wywołującego z taką końcówką, np. `deploy / fix`; API nie podaje, z którego reużywalnego workflowu pochodzi job. `failed-job-ids.txt` powstaje z `failed-jobs.json`, więc lista logów zgadza się z manifestem.
+
 ## `error-excerpts.json`
 
 Fragmenty logów wokół błędów, oczyszczone z ANSI, ze znacznikami czasu i numerami linii.

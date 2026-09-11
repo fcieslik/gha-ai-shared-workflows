@@ -73,12 +73,14 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/attempts/${SOURCE_RUN_ATTEMPT}/jobs?per_page=100" \
             > "$RUNNER_TEMP/source-jobs.json"
           # The manifest is the agents' input; log_path names the file the next step writes.
+          # Jobs of this workflow run inside the caller's run as "<caller job> / <job>", so the
+          # fix-failures and fix jobs of this or another call are left out.
           jq --arg log_dir "$RUNNER_TEMP" '[.[] | .jobs[]? | select(.conclusion == "failure") |
+            select(.name | test(" / (fix-failures|fix)$") | not) |
             {id, name, conclusion, failed_steps: [.steps[]? | select(.conclusion == "failure") | .name],
              log_path: "\($log_dir)/failed-job-\(.id).log"}]' \
             "$RUNNER_TEMP/source-jobs.json" | tee "$RUNNER_TEMP/failed-jobs.json"
-          jq -r '.[] | .jobs[]? | select(.conclusion == "failure") | .id' \
-            "$RUNNER_TEMP/source-jobs.json" > "$RUNNER_TEMP/failed-job-ids.txt"
+          jq -r '.[].id' "$RUNNER_TEMP/failed-jobs.json" > "$RUNNER_TEMP/failed-job-ids.txt"
 
       - name: Fetch logs for every failed job
         env:
