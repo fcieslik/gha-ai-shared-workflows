@@ -67,7 +67,7 @@ async function main() {
   });
 
   triageAgent.on("agent_tool_start", (ctx, agent) => {
-    console.log(`[${agent.name}] started`);
+    console.log(`[${agent.name}] started ${ctx.approveTool.name}`);
   });
 
   const result = await run(
