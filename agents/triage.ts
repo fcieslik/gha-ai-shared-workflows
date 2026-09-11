@@ -66,6 +66,10 @@ async function main() {
     outputType: TriageVerdictSchema,
   });
 
+  triageAgent.on("agent_tool_start", (ctx, agent) => {
+    console.log(`[${agent.name}] started`);
+  });
+
   const result = await run(
     triageAgent,
     [
