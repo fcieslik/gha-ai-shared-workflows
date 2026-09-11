@@ -8,9 +8,13 @@ function lineTotal(item) {
 }
 
 function cartTotal(items) {
-  return items.reduce((total, item) => total + lineTotal(item)); //failure
-  // return items.reduce((total, item) => total + lineTotal(item), 0); // ok
+  return items.reduce((total, item) => total + lineTotal(item)toSplit(2), 0);
 }
 
 const total = cartTotal(cart);
 console.log(`Cart total: ${total.toFixed(2)}`);
+const expectedTotal = 69.8;
+console.log(`Expected total: ${expectedTotal.toFixed(2)}`);
+console.log(
+  `Total matches expected: ${total.toFixed(2) === expectedTotal.toFixed(2)}`,
+);

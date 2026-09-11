@@ -1,10 +1,12 @@
 # actionlint 1.7.12 does not know the job.workflow_* context yet.
 # Remove once https://github.com/rhysd/actionlint/issues/705 is fixed.
 # Its metadata for actions/create-github-app-token@v3 predates the client-id input, which the
-# v3 tag has; app-id is deprecated there. Remove once actionlint's metadata is updated.
+# v3 tag has; app-id is deprecated there. Its metadata for openai/codex-action@v1 also predates
+# the permission-profile input. Remove once actionlint's metadata is updated.
 paths:
   .github/workflows/fix-failures.yml:
     ignore:
       - 'property "workflow_(repository|sha)" is not defined in object type'
       - 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
       - 'input "client-id" is not defined in action "actions/create-github-app-token@v3"'
+      - 'input "permission-profile" is not defined in action "openai/codex-action@v1"'

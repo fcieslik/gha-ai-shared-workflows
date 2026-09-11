@@ -14,7 +14,10 @@ Either input is "unavailable" when it was not collected.
 Report:
 - pattern: new_regression (it passed before, fails now) | intermittent (results alternate,
   or an earlier attempt of the same commit passed) | persistent (it never passed) |
-  default_branch_broken (the default branch fails too) | no_history.
+  default_branch_broken (the default branch fails too) | no_history. When the failing branch
+  passed before the failure (for example changes with base_kind last_successful_run), the
+  pattern is new_regression even if the default branch fails too; default_branch_broken is
+  only for a branch with no passing run before the failure.
 - changed_files: every changed file with its status, as listed in changes.
 - commits: every commit with the first line of its message.
 - evidence: the run ids, conclusions and change base the pattern rests on.
