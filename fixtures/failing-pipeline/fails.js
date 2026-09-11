@@ -8,7 +8,7 @@ function lineTotal(item) {
 }
 
 function cartTotal(items) {
-  return items.reduce((total, item) => total + lineTotal(item)); //failure
+  return items.reduce((total, item) => total + lineTotal(item).toLine()); //failure
   // return items.reduce((total, item) => total + lineTotal(item), 0); // ok
 }
 
