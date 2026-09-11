@@ -35,6 +35,9 @@ permissions:
 jobs:
   fix-failures:
     runs-on: ubuntu-latest
+    outputs:
+      # "true" only when the triage report allows a fix; the fixing job checks it in its if.
+      ready_for_fix: ${{ steps.fix-gate.outputs.ready_for_fix }}
     concurrency:
       group: >-
         fix-failures-${{ inputs.source_workflow }}-
@@ -324,6 +327,25 @@ jobs:
           # The copy nobody can read; absent when the checkout or copy failed, and the lead's
           # shell then reports it as unavailable.
           SOURCE_CHECKOUT_PATH: /tmp/fix-failures-source
+          TRIAGE_REPORT_PATH: ${{ runner.temp }}/triage-report.json
           # Scoped to this step so the log-collecting steps never see the key.
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: node agents/triage.ts
+
+      - name: Check whether the failure is ready for a fix
+        id: fix-gate
+        run: |
+          set -euo pipefail
+          # Anything but a boolean fails the step instead of letting the fixing job through.
+          ready_for_fix=$(jq -r '.ready_for_fix |
+            if type == "boolean" then . else error("ready_for_fix is not a boolean") end' \
+            "$RUNNER_TEMP/triage-report.json")
+          echo "ready_for_fix=$ready_for_fix" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Upload the triage report
+        # A job output holds at most 1 MB, and the report quotes CI logs.
+        uses: actions/upload-artifact@v7
+        with:
+          name: triage-report
+          path: ${{ runner.temp }}/triage-report.json
+          if-no-files-found: error

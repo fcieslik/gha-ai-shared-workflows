@@ -103,17 +103,18 @@ Kolejnością steruje kod w `agents/triage.ts`, a nie model. Błąd analityka hi
 
 ## Raport triage
 
-`agents/triage.ts` wypisuje na stdout JSON przeznaczony dla agenta naprawiającego:
+`agents/triage.ts` wypisuje na stdout i zapisuje do `TRIAGE_REPORT_PATH` (`$RUNNER_TEMP/triage-report.json`) JSON przeznaczony dla agenta naprawiającego:
 
 ```json
 { "run_context": {}, "failed_jobs": [], "log_analysis": {}, "history_analysis": {}, "shell_commands": [], "verdict": {}, "ready_for_fix": false }
 ```
 
-- `shell_commands` to polecenia, które lider uruchomił w `source/`, w kolejności wywołań. Zapisuje je opakowanie `Shell` w `agents/triage.ts`, więc są też po wymuszonym werdykcie po limicie tur. Pusta lista znaczy, że lider nie czytał repozytorium.
+- `shell_commands` to polecenia, które lider uruchomił w `/tmp/fix-failures-source`, w kolejności wywołań. Zapisuje je opakowanie `Shell` w `agents/triage.ts`, więc są też po wymuszonym werdykcie po limicie tur. Pusta lista znaczy, że lider nie czytał repozytorium.
 
 - `run_context`, `failed_jobs`, `log_analysis` i `history_analysis` kod dokleja bez zmian, więc nie zależą od tego, czy model poprawnie je przepisze. `history_analysis` jest `null`, gdy analityk historii padł.
 - `ready_for_fix` liczy kod: `next_action` to `fix`, `fix` nie jest `null`, a `confidence` należy do `FIX_CONFIDENCE_LEVELS` (`high`, `medium`). `medium` zostaje dopuszczone, bo historia i checkout repozytorium są opcjonalne (`continue-on-error`), a bez nich lider rzadko ma podstawy do `high`.
-- Raport trafia na razie tylko do logu kroku `Triage failures`; workflow nie zapisuje go jako pliku ani artefaktu.
+- Raport trafia do logu kroku `Triage failures` i do artefaktu `triage-report` (krok `Upload the triage report`), a nie do outputu joba, bo output ma limit 1 MB, a raport cytuje logi CI. Kolejny job pobiera go przez `actions/download-artifact` z `name: triage-report`.
+- Krok `Check whether the failure is ready for a fix` czyta `ready_for_fix` z pliku przez `jq` i ustawia output joba `ready_for_fix` na `"true"` albo `"false"`. Wartość inna niż boolean zatrzymuje job błędem. Job naprawiający ma przejść dalej tylko przy `if: needs.fix-failures.outputs.ready_for_fix == 'true'`; przy `"false"` (np. `preexisting_failure`) job triage jest zielony, a job naprawiający pominięty. Gdy triage padnie, oba kroki są pominięte, output jest pusty, a job triage czerwony.
 - Przed `main()` skrypt wypisuje `::stop-commands::<losowy token>`, a w `finally` wypisuje `::<token>::`. Raport cytuje logi CI, a runner wykonuje komendy workflow, np. `##[error]`, także w środku linii. Bez tej pauzy runner przepisywał linie raportu w logu kroku (np. `"text": "##[error]…"` zmieniało się w `##[error]…`) i dodawał do joba fałszywe adnotacje. Z tekstu z logów dałoby się też wstrzyknąć inne komendy, np. `add-mask`. Losowy token uniemożliwia wznowienie przetwarzania komend przez cytowany tekst. Pauza obejmuje też komunikat `Triage failed:`.
 - Cały przepływ działa w `main()` z `try/catch`. Błąd dowolnego etapu (brak zmiennej, walidacja zod, API OpenAI, brak werdyktu) trafia na stderr jako `Triage failed:` ze stackiem i przyczyną, a skrypt kończy się kodem 1, więc krok `Triage failures` jest czerwony. Raport nie jest wtedy wypisywany. Wysłane logi i tak są usuwane w `finally` w `withUploadedJobLogs`.
 

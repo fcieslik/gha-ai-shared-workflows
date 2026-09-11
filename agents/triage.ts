@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import {
   Agent,
   run,
@@ -153,7 +153,12 @@ async function main() {
       FIX_CONFIDENCE_LEVELS.includes(verdict.confidence),
   };
 
-  console.log(JSON.stringify(triageReport, null, 2));
+  const reportJson = JSON.stringify(triageReport, null, 2);
+  console.log(reportJson);
+  // The workflow uploads this file for the fixing job and reads ready_for_fix from it.
+  const reportPath = process.env.TRIAGE_REPORT_PATH;
+  if (!reportPath) throw new Error("TRIAGE_REPORT_PATH is not set");
+  await writeFile(reportPath, `${reportJson}\n`);
 }
 
 // The output quotes CI logs, and the runner executes workflow commands such as ##[error]
